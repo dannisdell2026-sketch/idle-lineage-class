@@ -77,6 +77,8 @@
         { id: 'pipiskin', name: '古金風手機介面', desc: '手機改成深色古金框版面：上方角色資訊、戰鬥框下方日誌、底部角色／背包／技能／社交／更多', group: '遊戲介面' },
         { id: 'walkview', name: '大地圖走位戰鬥', desc: '戰鬥畫面改成會跟著角色捲動的大地圖：怪物散在四周，角色自己走過去打', group: '遊戲介面' },
         { id: 'starterkit', name: '新角色起始禮包', desc: '新建角色送安定值骷髏全套、大馬士革刀、十字弓、瑪那魔杖，金幣 500 萬', group: '其他' },
+        { id: 'rates', name: '伺服器倍率', desc: '依伺服器設定調整經驗、掉寶、金幣與強化成功率倍率', group: '其他' },
+        { id: 'online', name: '線上聊天與交易', desc: '帳號登入後可和其他玩家聊天、面對面交易、使用交易所', group: '其他' },
         { id: 'battlehud', name: '手機戰鬥狀態列', desc: '戰鬥畫面上方多一排：等級、防禦、金幣、經驗與血魔量', group: '遊戲介面' },
         { id: 'nozoom', name: '手機取消雙擊放大', desc: '連點兩下不會放大畫面（兩指縮放照常）', group: '遊戲介面' },
         { id: 'statusicon', name: '手機狀態圖示縮小', desc: '手機上的狀態圖示縮成一半，不會蓋住戰鬥畫面', group: '遊戲介面' },
@@ -311,6 +313,19 @@
     //    這顆固定按鈕的位置正好蓋住第一顆「🏠 首頁」讓人點不到（玩家回報）。獨立分頁只看 location.search，
     //    不碰任何外掛設的變數／class（逃生門不可依賴可被關掉的東西）；回到首頁就看得到這顆鈕，逃生門仍在。
     function inStandaloneView() { try { return !!new URLSearchParams(location.search).get('view'); } catch (e) { return false; } }
+    // 🔐 外掛開關只給 GM：網址帶 ?gm=<密鑰> 且雜湊吻合才顯示左上角這顆鈕（GM 倍率面板裡也有入口）。
+    //    驗證寫在本檔、不依賴 afk-rates（那支可被關掉；關掉後 GM 仍要能從這裡把它開回來）。
+    var GM_HASH = 'b4436f898f4754eea8f57971915606c7a8d7b18db1c3fd175ef0670b84b03bc3';
+    var isGM = false;
+    try {
+        var _gk = new URLSearchParams(location.search).get('gm');
+        if (_gk && window.crypto && crypto.subtle) {
+            crypto.subtle.digest('SHA-256', new TextEncoder().encode(_gk)).then(function (b) {
+                var h = Array.prototype.map.call(new Uint8Array(b), function (x) { return ('0' + x.toString(16)).slice(-2); }).join('');
+                isGM = (h === GM_HASH); try { syncEntryVisibility(); } catch (e) {}
+            }).catch(function () {});
+        }
+    } catch (e) {}
     // 只在首頁顯示：進遊戲（#game-screen 顯示 / #main-menu 隱藏）就把左上角開關鈕藏起來。
     function syncEntryVisibility() {
         var btn = document.getElementById('afk-toggles-entry');
@@ -318,7 +333,7 @@
         // 以「遊戲畫面是否顯示」為準（最可靠）：game-screen 沒隱藏＝在遊戲中→藏開關鈕；否則(首頁/選角/創角)顯示。
         var gs = document.getElementById('game-screen');
         var inGame = gs && !gs.classList.contains('hidden');
-        btn.style.display = (inGame || inStandaloneView()) ? 'none' : '';
+        btn.style.display = (inGame || inStandaloneView() || !isGM) ? 'none' : '';
         syncEntryTop();   // 橫幅由遊戲 loop 晚注入、高度也會變（換行）→ 每秒跟著校正一次
     }
     syncEntryVisibility();

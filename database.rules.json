@@ -1,0 +1,52 @@
+{
+  "rules": {
+    "users": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid === $uid",
+        "name": { ".validate": "newData.isString() && newData.val().length >= 2 && newData.val().length <= 12" }
+      }
+    },
+    "names": {
+      "$key": {
+        ".read": "auth != null",
+        ".write": "auth != null && !data.exists() && newData.val() === auth.uid"
+      }
+    },
+    "presence": {
+      ".read": "auth != null",
+      "$uid": { ".write": "auth != null && auth.uid === $uid" }
+    },
+    "chat": {
+      ".read": "auth != null",
+      ".indexOn": ["t"],
+      "$msg": {
+        ".write": "auth != null && !data.exists() && newData.child('uid').val() === auth.uid",
+        ".validate": "newData.hasChildren(['uid','name','text','t']) && newData.child('text').isString() && newData.child('text').val().length <= 100"
+      }
+    },
+    "invites": {
+      "$to": {
+        ".read": "auth != null && auth.uid === $to",
+        "$from": { ".write": "auth != null && (auth.uid === $from || auth.uid === $to)" }
+      }
+    },
+    "trades": {
+      ".indexOn": ["a", "b"],
+      ".read": "auth != null && (query.orderByChild === 'a' || query.orderByChild === 'b') && query.equalTo === auth.uid",
+      "$tid": {
+        ".read": "auth != null && (data.child('a').val() === auth.uid || data.child('b').val() === auth.uid)",
+        ".write": "auth != null && ((!data.exists() && newData.child('a').val() === auth.uid) || data.child('a').val() === auth.uid || data.child('b').val() === auth.uid)",
+        ".validate": "newData.child('a').val() === data.child('a').val() || !data.exists()"
+      }
+    },
+    "market": {
+      ".read": "auth != null",
+      ".indexOn": ["status", "seller", "buyer"],
+      "$lid": {
+        ".write": "auth != null && ((!data.exists() && newData.child('seller').val() === auth.uid && newData.child('status').val() === 'open') || data.child('seller').val() === auth.uid || (data.child('status').val() === 'open' && newData.child('buyer').val() === auth.uid) || data.child('buyer').val() === auth.uid)",
+        ".validate": "newData.child('price').isNumber() && newData.child('price').val() > 0 && (!data.exists() || newData.child('seller').val() === data.child('seller').val())"
+      }
+    }
+  }
+}
