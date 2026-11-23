@@ -2,5 +2,71 @@
   "exp": 3,
   "drop": 2,
   "gold": 3,
-  "enhance": 0.1
+  "enhance": 0.1,
+  "bm": 1,
+  "starter": {
+    "gold": 5000000,
+    "items": [
+      {
+        "id": "hlm_bone",
+        "en": 4,
+        "cnt": 1,
+        "equip": true
+      },
+      {
+        "id": "amr_bone",
+        "en": 4,
+        "cnt": 1,
+        "equip": true
+      },
+      {
+        "id": "shd_bone",
+        "en": 4,
+        "cnt": 1,
+        "equip": true
+      },
+      {
+        "id": "wpn_damascus",
+        "en": 6,
+        "cnt": 1,
+        "equip": true
+      },
+      {
+        "id": "wpn_31",
+        "en": 6,
+        "cnt": 1,
+        "equip": true
+      },
+      {
+        "id": "wpn_manawand",
+        "en": 6,
+        "cnt": 1,
+        "equip": true
+      },
+      {
+        "id": "clk_mr",
+        "en": 4,
+        "cnt": 1,
+        "equip": true
+      },
+      {
+        "id": "arm_90",
+        "en": 4,
+        "cnt": 1,
+        "equip": true
+      },
+      {
+        "id": "wpn_2hsword",
+        "en": 6,
+        "cnt": 1,
+        "equip": true
+      },
+      {
+        "id": "wpn_longsword",
+        "en": 6,
+        "cnt": 1,
+        "equip": true
+      }
+    ]
+  }
 }
