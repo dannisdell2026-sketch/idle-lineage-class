@@ -1,11 +1,9 @@
 /* ============================================================================
  * afk-starterkit.js — 新角色起始禮包（使用者自訂）
  *
- * 創角(startGame)跑完後，每個「新建」的角色額外拿到：
- *   ・骷髏套裝(骷髏頭盔／骷髏盔甲／骷髏盾牌)，強化值＝各自的安定值
- *   ・大馬士革刀、十字弓、瑪那魔杖，強化值＝各自的安定值
- *   ・金幣設為 5,000,000
- * 並自動穿上該職業能穿的：骷髏三件；騎士→大馬士革刀、妖精→十字弓、法師→瑪那魔杖。
+ * 創角(startGame)跑完後，每個「新建」的角色拿到禮包。內容由 GM 面板設定（afk-rates 的 starter），
+ * 沒設定時用預設：骷髏套裝＋大馬士革刀＋十字弓＋瑪那魔杖（皆為安定值）、金幣 5,000,000。
+ * 勾了「穿上」且職業能穿的會自動裝備；武器只穿一把，職業慣用的優先。
  *
  * 只包 startGame，原函式完整照跑（含它最後的 saveGame），之後才加禮包再存一次。
  * 已拿過的角色會記 player._afkStarterKit，不會重複發；讀檔(loadGame)不會觸發。
@@ -45,22 +43,52 @@
     try { var r = DB.items[id].req; return !r || r === 'all' || r.split(',').indexOf(player.cls) >= 0; } catch (e) { return false; }
   }
 
+  // 預設禮包（GM 面板沒設定時用這份；GM 面板也拿它當初始內容）
+  function defaultCfg() {
+    var items = ARMOR.concat(WEAPONS).map(function (id) { return { id: id, en: safeOf(id), cnt: 1, equip: true }; });
+    return { gold: GOLD, items: items };
+  }
+  window.AFK_STARTER_DEFAULT = defaultCfg;
+  function cfg() {
+    try { var c = window.AFK_RATES && AFK_RATES.starter && AFK_RATES.starter(); if (c && Array.isArray(c.items)) return c; } catch (e) {}
+    return defaultCfg();
+  }
+  function give2(x) {
+    try {
+      if (!DB.items[x.id]) { console.warn('[afk-starterkit] 找不到物品', x.id); return null; }
+      gainItem(x.id, x.cnt || 1, true, true);
+      var it = null;
+      for (var i = player.inv.length - 1; i >= 0; i--) { if (player.inv[i].id === x.id) { it = player.inv[i]; break; } }
+      if (it && typeof x.en === 'number' && x.en !== (it.en || 0)) {
+        // 指定強化值：從剛拿到的那疊拆出來單獨一格（同簽章規則：強化值不同就是不同格）
+        var n = x.cnt || 1;
+        if ((it.cnt || 1) > n) { it.cnt -= n; it = JSON.parse(JSON.stringify(it)); it.cnt = n; it.uid = uid(); player.inv.push(it); }
+        it.en = x.en;
+      }
+      return it;
+    } catch (e) { console.warn('[afk-starterkit] 發放失敗', x.id, e); return null; }
+  }
   function grant() {
     if (!player || !player.cls || player.lv !== 1 || player._afkStarterKit) return;
     player._afkStarterKit = true;
-    var got = {};
-    ARMOR.concat(WEAPONS).forEach(function (id) { got[id] = give(id); });
-    player.gold = GOLD;
+    var c = cfg(), wpns = [];
+    var got = c.items.map(function (x) { return { x: x, it: give2(x) }; });
+    player.gold = Math.max(0, Math.floor(c.gold) || 0);
     try {
-      ARMOR.forEach(function (id) { if (got[id] && canWear(id)) equipItem(got[id]); });
-      var w = EQUIP_WPN[player.cls];
-      if (w && got[w] && canWear(w)) equipItem(got[w]);
+      got.forEach(function (g) {
+        if (!g.it || !g.x.equip || !canWear(g.x.id)) return;
+        var d = DB.items[g.x.id];
+        if (d.type === 'wpn' && !d.isArrow) wpns.push(g); else equipItem(g.it);
+      });
+      // 武器只穿一把：職業慣用的優先（騎士大馬士革刀／妖精十字弓／法師瑪那魔杖），否則清單裡第一把
+      var pref = EQUIP_WPN[player.cls], pick = wpns.find(function (g) { return g.x.id === pref; }) || wpns[0];
+      if (pick) equipItem(pick.it);
     } catch (e) { console.warn('[afk-starterkit] 自動穿裝失敗', e); }
     try { calcStats(); player.hp = player.mhp; player.mp = player.mmp; } catch (e) {}
     try { if (typeof renderTabs === 'function') renderTabs(true); } catch (e) {}
     try { if (typeof updateUI === 'function') updateUI(); } catch (e) {}
     try { if (player && player.cls) saveGame(); } catch (e) { console.warn('[afk-starterkit] 存檔失敗', e); }
-    try { if (typeof logSys === 'function') logSys('🎁 起始禮包已發放：骷髏套裝、大馬士革刀、十字弓、瑪那魔杖、金幣 5,000,000'); } catch (e) {}
+    try { if (typeof logSys === 'function') logSys('🎁 起始禮包已發放。'); } catch (e) {}
   }
 
   function hook() {
