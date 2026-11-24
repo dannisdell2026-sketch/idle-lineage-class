@@ -1,9 +1,9 @@
 {
-  "exp": 10,
-  "drop": 5,
-  "gold": 10,
-  "enhance": 1.5,
-  "bm": 10,
+  "exp": 20,
+  "drop": 20,
+  "gold": 20,
+  "enhance": 20,
+  "bm": 20,
   "starter": {
     "gold": 50000000,
     "items": [
