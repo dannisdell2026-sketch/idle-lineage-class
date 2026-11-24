@@ -41,7 +41,10 @@
     applyRemote: function (obj) { if (!obj) return; for (var k in DEF) if (obj[k] != null) GM.set(k, obj[k]); },
     mobCount: function () { return Math.max(5, Math.round(BASE_MOBS * (cfg.mobMult || 1))); },
     baseMobs: BASE_MOBS,
-    isGM: isGM
+    isGM: isGM,
+    // 給其他外掛加 GM 面板按鈕：AFK_GM.addSection('標題', function(){...})
+    sections: [],
+    addSection: function (label, fn) { GM.sections = GM.sections.filter(function (s) { return s.label !== label; }); GM.sections.push({ label: String(label), fn: fn }); }
   };
 
   // ---- 解鎖（#gm=碼 或 ?gm=碼）-------------------------------------------------
@@ -121,11 +124,13 @@
         '<div class="row"><div class="lbl">怪物倍數（每張狩獵地圖的怪物數量）</div><div class="opts">' + opts + '</div>' +
         '<div class="note" style="margin-top:6px">基本 30 隻 × 倍數，立刻套用到目前地圖。離線掛機結算也用同一個倍數（怪越多，找下一隻怪的路越短、同時圍上來的怪也越多）。</div></div>' +
         '<div class="note">目前：×' + cfg.mobMult + '（' + GM.mobCount() + ' 隻）</div>' +
+        (GM.sections.length ? '<div class="row" style="margin-top:12px"><div class="lbl">村莊管理</div><div class="opts">' + GM.sections.map(function (s, i) { return '<button data-sec="' + i + '">' + s.label.replace(/[&<>"]/g, '') + '</button>'; }).join('') + '</div></div>' : '') +
       '</div>' +
       '<div class="foot"><button data-act="lock">鎖回去（隱藏 GM）</button><button data-act="close">關閉</button></div>';
     p.addEventListener('click', function (e) {
       var t = e.target.closest('button'); if (!t) return;
       if (t.dataset.v) { GM.set('mobMult', Number(t.dataset.v)); openPanel(); return; }
+      if (t.dataset.sec) { var s = GM.sections[+t.dataset.sec]; closePanel(); if (s) try { s.fn(); } catch (e3) {} return; }
       if (t.dataset.act === 'close') closePanel();
       if (t.dataset.act === 'lock') { try { localStorage.removeItem(UNLOCK_KEY); } catch (e2) {} closePanel(); ensureButton(); toast('已隱藏 GM 面板（要再用就重開 GM 連結）'); }
     });
