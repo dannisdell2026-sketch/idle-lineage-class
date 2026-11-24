@@ -565,5 +565,8 @@
     wasIn = now;
   }, 2000);
 
+  // 給 afk-mp.js 用：點地圖上的玩家／聊天名字 →「交易」＝打開面板並發起託管交易
+  window.__afkOnlineInvite = function (to) { try { openPanel(); sdk().then(function () { if (me) invite(to); }); } catch (e) {} };
+
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();
