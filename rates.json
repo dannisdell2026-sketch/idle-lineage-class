@@ -2,7 +2,7 @@
   "exp": 3,
   "drop": 2,
   "gold": 3,
-  "enhance": 0.1,
+  "enhance": 1.6,
   "bm": 1,
   "starter": {
     "gold": 5000000,
