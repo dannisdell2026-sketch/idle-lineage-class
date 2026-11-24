@@ -1,11 +1,11 @@
 {
-  "exp": 3,
-  "drop": 2,
-  "gold": 3,
-  "enhance": 1.6,
-  "bm": 5,
+  "exp": 10,
+  "drop": 5,
+  "gold": 10,
+  "enhance": 1.5,
+  "bm": 10,
   "starter": {
-    "gold": 5000000,
+    "gold": 50000000,
     "items": [
       {
         "id": "hlm_bone",
@@ -63,6 +63,24 @@
       },
       {
         "id": "wpn_longsword",
+        "en": 6,
+        "cnt": 1,
+        "equip": true
+      },
+      {
+        "id": "wpn_dual_steel",
+        "en": 6,
+        "cnt": 1,
+        "equip": true
+      },
+      {
+        "id": "wpn_shaha_bow",
+        "en": 6,
+        "cnt": 1,
+        "equip": true
+      },
+      {
+        "id": "wpn_redflame_sword",
         "en": 6,
         "cnt": 1,
         "equip": true
