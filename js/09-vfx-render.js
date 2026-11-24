@@ -1334,7 +1334,7 @@ function _renderMobsImpl() {
     let _showMobEleFlag = (typeof _relicShowMobEle === 'function') && _relicShowMobEle();   // 🏺 巨大螞蟻的複眼：狀態直接顯示敵人屬性（一次計算·全格共用）
 
     let _back = backSlotsActive();                                   // 🆕 五格模式：原三格(前排)＋後排兩格
-    let _order = _back ? [0, 1, 2, 3, 4] : [0, 1, 2];                // 🆕 v2.7.47 前排(0,1,2)由左而右→再後排(3,4)由左而右；視覺左右序＝目標鎖定序一致(不再交錯)
+    let _order = _back ? Array.from({ length: ((typeof window !== 'undefined' && typeof window.__afkBackSlots === 'function') ? window.__afkBackSlots() : 5) }, (_, q) => q) : [0, 1, 2];   /* 🔌 加掛版補丁：格數鉤子(預設 5＝[0..4]) */                // 🆕 v2.7.47 前排(0,1,2)由左而右→再後排(3,4)由左而右；視覺左右序＝目標鎖定序一致(不再交錯)
     for(let _k = 0; _k < _order.length; _k++) {
         let i = _order[_k];
         let m = mapState.mobs[i];
