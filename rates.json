@@ -3,7 +3,7 @@
   "drop": 2,
   "gold": 3,
   "enhance": 1.6,
-  "bm": 1,
+  "bm": 5,
   "starter": {
     "gold": 5000000,
     "items": [
