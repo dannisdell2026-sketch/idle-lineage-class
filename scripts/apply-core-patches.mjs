@@ -7,7 +7,7 @@
  *   - 失敗大聲：錨點找不到就 throw（exit 1）→ CI 紅，讓人知道要修錨點，而不是默默讓離線壞掉。
  *
  * 目前的核心補丁（越少越好）：
- *   （完整清單見檔尾 PATCHES 與 docs/plugins.md；補丁 14＝大地圖多怪的格數鉤子 __afkBackSlots）
+ *   （完整清單見檔尾 PATCHES 與 docs/plugins.md；補丁 14＝大地圖多怪的格數鉤子 __afkBackSlots；15／16＝射程鉤子 __afkMobIdle／__afkPlayerHold）
  *   1. maybeSpawnMobs — 把 js/03 tick() 內「出怪排程」那一塊 { } 抽成具名函式，讓離線快速結算
  *      能用「與線上同一份」的出怪排程（出怪延遲/BOSS 節流/後排格/席琳日光加速全照原作）。
  *      其餘離線鉤子（saveGame/loadGame/changeMap/killMob/gainItem 包裝、結算期間靜音渲染）
@@ -465,7 +465,28 @@ function patchBackSlotsHook() {
   }
 }
 
-const PATCHES = [patchMaybeSpawnMobs, patchTradEnHook, patch16Slots, patchPetAnimTicker, patchBossHuntEscape, patchUseItemKeepModal, patchSellNowNoForce, patchInsigniaOrder, patchGiltasWandRecompute, patchEyeSlotInEquipList, patchRelicAffixHook, patchIllusionSetWpnProc, patchBuyerEnHook, patchBackSlotsHook];
+// 補丁 15／16：大地圖走位的「射程」鉤子（供 afk-walkview 的大地圖多怪使用；鉤子不存在＝完全照原版）。
+//   15：怪物行動迴圈在「攻擊排程」前問 window.__afkMobIdle(m, i)，回 true＝這隻怪這一拍不出手（不在玩家身邊）。
+//       放在狀態倒數／中毒／回血之後 → 遠處的怪 DoT、回血照常，只是不攻擊不施法。
+//   16：玩家階段問 window.__afkPlayerHold()，回 true＝這一拍不自動施法、不普攻（還沒走到射程內）；藥水／自救等 autoActions 不受影響。
+function patchCombatRangeHooks() {
+  const FILE = 'js/03-combat-core.js';
+  let s = readFileSync(FILE, 'utf8');
+  if (s.includes('__afkMobIdle') && s.includes('__afkPlayerHold')) { already++; return; }
+  const A15 = "        if (m.noAttack) continue;\n        if(m._atkCd === undefined) m._atkCd = Math.max(1, Math.floor(m.atkSpd * 10));";
+  if (s.indexOf(A15) < 0) throw new Error(`[${FILE}] 找不到怪物攻擊排程錨點（noAttack → _atkCd）——上游可能改寫了怪物行動迴圈，請人工檢查（補丁 15）。`);
+  s = s.replace(A15, "        if (m.noAttack) continue;\n        if (typeof window !== 'undefined' && typeof window.__afkMobIdle === 'function' && window.__afkMobIdle(m, i)) continue;   /* 🔌 加掛版補丁 15：不在玩家身邊的怪不出手 */\n        if(m._atkCd === undefined) m._atkCd = Math.max(1, Math.floor(m.atkSpd * 10));");
+  const A16a = "    if(canAct) autoCastSpells();   // 每 tick 嘗試自動施法";
+  const A16b = "    if(canAct) {\n        let aspdTicks = playerAttackIntervalTicks(true);";
+  if (s.indexOf(A16a) < 0 || s.indexOf(A16b) < 0) throw new Error(`[${FILE}] 找不到玩家出手錨點（autoCastSpells／aspdTicks）——上游可能改寫了 tick()，請人工檢查（補丁 16）。`);
+  s = s.replace(A16a, "    let _afkHold = (typeof window !== 'undefined' && typeof window.__afkPlayerHold === 'function') ? !!window.__afkPlayerHold() : false;   /* 🔌 加掛版補丁 16：還沒走到射程內不出手 */\n    if(canAct && !_afkHold) autoCastSpells();   // 每 tick 嘗試自動施法");
+  s = s.replace(A16b, "    if(canAct && !_afkHold) {   /* 🔌 加掛版補丁 16 */\n        let aspdTicks = playerAttackIntervalTicks(true);");
+  if (!CHECK) writeFileSync(FILE, s);
+  changed++;
+  console.log(`[patch] 怪物／玩家射程鉤子（${FILE}）`);
+}
+
+const PATCHES = [patchMaybeSpawnMobs, patchTradEnHook, patch16Slots, patchPetAnimTicker, patchBossHuntEscape, patchUseItemKeepModal, patchSellNowNoForce, patchInsigniaOrder, patchGiltasWandRecompute, patchEyeSlotInEquipList, patchRelicAffixHook, patchIllusionSetWpnProc, patchBuyerEnHook, patchBackSlotsHook, patchCombatRangeHooks];
 
 try {
   for (const p of PATCHES) p();
