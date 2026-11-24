@@ -45,7 +45,7 @@
     var d = items()[id]; if (!d) return null;
     if (d.doll || d.slot === 'doll') return 'doll';
     if (d.type === 'scroll' || /卷軸/.test(d.n || '')) return 'scroll';
-    if (d.type === 'heal' || d.type === 'pot' || /藥水/.test(d.n || '')) return 'pot';
+    if (d.type === 'heal' || d.type === 'pot') return 'pot';
     if (d.type === 'wpn' || d.type === 'arm' || d.type === 'acc') return 'eq';
     return null;
   }
@@ -216,6 +216,7 @@
     if (dragMode) {
       if (!bar) { bar = document.createElement('div'); bar.id = 'gmt-dragbar'; document.body.appendChild(bar); bar.addEventListener('click', function (e) { if (e.target.closest('button')) setDrag(false); }); }
       bar.innerHTML = '✋ 拖曳模式：在村莊地圖上拖 GM 的 NPC／雕像，放開就存 <button type="button">完成</button>';
+      try { if (typeof closeNpcInteraction === 'function') closeNpcInteraction(); } catch (e) {}
       if (!curTown()) toast('請先回到村莊再拖曳');
     } else if (bar) bar.remove();
     refreshTown();
@@ -295,7 +296,7 @@
     'body.afk-npclist.gmt-drag #town-npc-map{display:block!important;}',
     'body.gmt-drag #afk-npclist{display:none!important;}',
     'body.gmt-drag #town-npc-map .gmt-npc{cursor:move;outline:2px dashed #e7b54a;outline-offset:2px;touch-action:none}',
-    '#gmt-dragbar{position:fixed;left:50%;top:8px;transform:translateX(-50%);z-index:100000;background:rgba(40,26,6,.95);color:#ffe39a;border:1px solid #b08a3a;border-radius:6px;padding:6px 10px;font:600 13px/1.4 "Noto Serif TC",serif;max-width:94vw}',
+    '#gmt-dragbar{position:fixed;left:50%;bottom:84px;transform:translateX(-50%);z-index:2147483000;background:rgba(40,26,6,.95);color:#ffe39a;border:1px solid #b08a3a;border-radius:6px;padding:6px 10px;font:600 13px/1.4 "Noto Serif TC",serif;max-width:94vw}',
     '#gmt-dragbar button{margin-left:8px;padding:3px 10px;border:1px solid #8a6a2a;border-radius:4px;background:#2c1f0c;color:#ffe3a0;font-weight:700;cursor:pointer}'
   ].join('\n');
   function ensureStyle() { if ($('afk-gmtown-style')) return; var s = document.createElement('style'); s.id = 'afk-gmtown-style'; s.textContent = CSS; document.head.appendChild(s); }
@@ -333,7 +334,7 @@
     var body = p.querySelector('.b');
     function draw() {
       var D = items();
-      var res = Object.keys(D).filter(function (k) { return itemCat(k) === cat && (!q || (D[k].n || '').indexOf(q) >= 0) && !w.items.some(function (x) { return x.id === k; }); }).slice(0, 80);
+      var res = Object.keys(D).filter(function (k) { return itemCat(k) === cat && (!q || (D[k].n || '').indexOf(q) >= 0) && !w.items.some(function (x) { return x.id === k; }); }).slice(0, 150);
       body.innerHTML =
         '<div class="fl"><span>名稱</span><input data-f="n" maxlength="12" value="' + esc(w.n) + '"></div>' +
         '<div class="fl"><span>職稱</span><input data-f="title" maxlength="10" value="' + esc(w.title) + '"></div>' +
