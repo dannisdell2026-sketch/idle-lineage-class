@@ -87,7 +87,7 @@
     if (location.protocol === 'file:') return;
     fetch('firebase-config.json?t=' + Date.now(), { cache: 'no-store' })
       .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (c) { if (!c || !c.apiKey || !c.databaseURL) return; cfg = c; injectButton(); })
+      .then(function (c) { if (!c || !c.apiKey || !c.databaseURL) return; cfg = c; injectButton(); titleBox(); setInterval(titleBox, 800); })
       .catch(function () {});
   }
   var sdkP = null;
@@ -211,27 +211,70 @@
     var bd = ui.querySelector('.bd'), err = bd.querySelector('.err');
     function vals() { return { u: bd.querySelector('[data-u]').value.trim(), p: bd.querySelector('[data-p]').value }; }
     function bad(m) { err.textContent = m; }
-    function ok(u) { try { sessionStorage.setItem('afk_on_auto', '1'); } catch (e) {} }
-    bd.querySelector('[data-a="in"]').onclick = function () {
-      var v = vals(); if (!v.u || !v.p) return bad('請輸入帳號和密碼。');
-      auth.signInWithEmailAndPassword(toHex(v.u.toLowerCase()) + EMAIL_DOMAIN, v.p).then(ok).catch(function () { bad('帳號或密碼錯誤。'); });
+    bd.querySelector('[data-a="in"]').onclick = function () { var v = vals(); bad(''); doLogin(v.u, v.p).catch(bad); };
+    bd.querySelector('[data-a="up"]').onclick = function () { var v = vals(); bad('註冊中…'); doRegister(v.u, v.p).then(function () { bad(''); }, bad); };
+  }
+
+  // ---- 帳號：登入／註冊（面板與標題畫面共用）-------------------------------------
+  // email＝帳號 UTF-8 的十六進位＋網域；Firebase email 前段上限 64 字 → 超過 60 字（約 10 個中文字以上）取前 60 字。
+  function emailOf(u) { var h = toHex(String(u).trim().toLowerCase()); return (h.length > 60 ? h.slice(0, 60) : h) + EMAIL_DOMAIN; }
+  function authErr(e, def) {
+    if (typeof e === 'string') return e;
+    var c = (e && e.code) || '';
+    if (c === 'taken' || c === 'auth/email-already-in-use') return '這個帳號已經有人用了。';
+    if (c === 'auth/weak-password') return '密碼至少 6 個字元。';
+    if (c === 'auth/too-many-requests') return '嘗試太多次，請稍後再試。';
+    if (c === 'auth/network-request-failed') return '網路連不上，請檢查網路。';
+    if (c === 'auth/invalid-credential' || c === 'auth/wrong-password' || c === 'auth/user-not-found' || c === 'auth/invalid-login-credentials') return '帳號或密碼錯誤。';
+    return def + '（' + (c || (e && e.message) || e) + '）';
+  }
+  function doLogin(u, p) {
+    u = String(u || '').trim(); if (!u || !p) return Promise.reject('請輸入帳號和密碼。');
+    return sdk().then(function () { return auth.signInWithEmailAndPassword(emailOf(u), p); })
+      .then(function () { try { sessionStorage.setItem('afk_on_auto', '1'); } catch (e) {} })
+      .catch(function (e) { throw authErr(e, '登入失敗'); });
+  }
+  function doRegister(u, p) {
+    u = String(u || '').trim();
+    if (u.length < 2 || u.length > 12 || /[\s<>.#$\[\]\/]/.test(u)) return Promise.reject('帳號要 2～12 字，不能有空白或 < > . # $ [ ] /。');
+    if (!p || p.length < 6) return Promise.reject('密碼至少 6 個字元。');
+    var key = nameKey(u);
+    return sdk().then(function () { return db.ref('names/' + key).once('value'); })
+      .then(function (s) { if (s.exists()) throw { code: 'taken' }; return auth.createUserWithEmailAndPassword(emailOf(u), p); })
+      .then(function (cred) {
+        return db.ref('names/' + key).set(cred.user.uid)
+          .then(function () { return db.ref('users/' + cred.user.uid).set({ name: u, created: fb.database.ServerValue.TIMESTAMP }); })
+          .then(function () { myName = u; try { sessionStorage.setItem('afk_on_auto', '1'); } catch (e) {} offAll(); onLogin(); });
+      })
+      .catch(function (e) { throw authErr(e, '註冊失敗'); });
+  }
+  // 標題畫面「開始遊戲」上方的登入框（不登入＝單機玩）
+  var TITLE_CSS = '#afk-on-title{width:18rem;max-width:90vw;margin:0 auto 10px;padding:9px 11px;border:1px solid #7a5d2a;border-radius:8px;background:linear-gradient(#22180b,#120c05);color:#e8d6a8;font:13px/1.5 "Noto Serif TC","PMingLiU",serif;text-align:left}' +
+    '#afk-on-title .t{color:#e2c27a;font-weight:700;margin-bottom:4px}#afk-on-title input{width:100%;box-sizing:border-box;margin:3px 0;padding:6px 8px;background:#0a0806;border:1px solid #5a4520;border-radius:4px;color:#f0e2bd;font-size:14px}' +
+    '#afk-on-title .r{display:flex;gap:6px;margin-top:5px}#afk-on-title button{flex:1;padding:7px 0;border:1px solid #8a6a2a;border-radius:5px;background:#1c140a;color:#cdb47a;font:700 14px/1 inherit;cursor:pointer}' +
+    '#afk-on-title button.pri{background:linear-gradient(#4a3514,#241808);color:#ffe3a0}#afk-on-title .err{color:#ff8f7a;font-size:12px;min-height:16px;margin-top:3px}#afk-on-title .n{font-size:11.5px;color:#a8946a;margin-top:4px}#afk-on-title b{color:#ffd77a}';
+  function titleBox() {
+    var sb = $('btn-start-menu'), box = $('afk-on-title');
+    if (!sb || !sb.offsetParent) { if (box) box.style.display = 'none'; return; }
+    if (!$('afk-on-title-css')) { var st = document.createElement('style'); st.id = 'afk-on-title-css'; st.textContent = TITLE_CSS; document.head.appendChild(st); }
+    if (!box) { box = document.createElement('div'); box.id = 'afk-on-title'; }
+    if (box.nextSibling !== sb) sb.parentNode.insertBefore(box, sb);
+    box.style.display = '';
+    var state = me ? 'in:' + myName : 'out';
+    if (box.getAttribute('data-s') === state) return; box.setAttribute('data-s', state);
+    box.innerHTML = me
+      ? '<div class="t">🌐 已登入：<b>' + esc(myName || '…') + '</b></div><div class="n">按「開始遊戲」進去就能和其他玩家聊天、交易、決鬥。</div><div class="r"><button type="button" data-a="out">登出</button></div><div class="err"></div>'
+      : '<div class="t">🌐 線上帳號（不登入＝單機玩）</div><input data-u placeholder="帳號（2～12 字，中英文都可）" maxlength="12" autocomplete="username"><input data-p type="password" placeholder="密碼（至少 6 個字元）" autocomplete="current-password">' +
+        '<div class="r"><button type="button" class="pri" data-a="in">登入</button><button type="button" data-a="up">註冊新帳號</button></div><div class="err"></div>';
+    box.onclick = function (e) {
+      var b = e.target.closest('button'); if (!b) return;
+      var err = box.querySelector('.err');
+      if (b.dataset.a === 'out') { try { sessionStorage.removeItem('afk_on_auto'); } catch (e2) {} if (auth) auth.signOut(); return; }
+      var u = box.querySelector('[data-u]').value, p = box.querySelector('[data-p]').value;
+      err.textContent = b.dataset.a === 'in' ? '登入中…' : '註冊中…'; b.disabled = true;
+      (b.dataset.a === 'in' ? doLogin(u, p) : doRegister(u, p)).then(function () { err.textContent = ''; b.disabled = false; box.removeAttribute('data-s'); }, function (m) { err.textContent = m; b.disabled = false; });
     };
-    bd.querySelector('[data-a="up"]').onclick = function () {
-      var v = vals();
-      if (v.u.length < 2 || v.u.length > 12 || /[\s<>]/.test(v.u)) return bad('帳號要 2～12 字，不能有空白或 < >。');
-      if (v.p.length < 6) return bad('密碼至少 6 個字元。');
-      var key = nameKey(v.u);
-      db.ref('names/' + key).once('value').then(function (s) {
-        if (s.exists()) throw { code: 'taken' };
-        return auth.createUserWithEmailAndPassword(toHex(v.u.toLowerCase()) + EMAIL_DOMAIN, v.p);
-      }).then(function (cred) {
-        return db.ref('names/' + key).set(cred.user.uid).then(function () {
-          return db.ref('users/' + cred.user.uid).set({ name: v.u, created: fb.database.ServerValue.TIMESTAMP });
-        }).then(function () { myName = v.u; ok(); onLogin(); });
-      }).catch(function (e) {
-        bad(e && (e.code === 'taken' || e.code === 'auth/email-already-in-use') ? '這個帳號已經有人用了。' : '註冊失敗，請稍後再試。');
-      });
-    };
+    box.querySelector('[data-p]') && box.querySelector('[data-p]').addEventListener('keydown', function (e) { if (e.key === 'Enter') box.querySelector('[data-a="in"]').click(); });
   }
 
   // ---- 登入後：在線、聊天、邀請、補發 -------------------------------------------
