@@ -703,7 +703,8 @@ function tick() {
     if((player.cds.purifySk || 0) > 0) player.cds.purifySk--;   // 🔧 淨化技獨立冷卻
     if((player.cds.convertSk || 0) > 0) player.cds.convertSk--;   // 🔄 轉換技獨立冷卻（與攻擊／治癒共用相同施法速度公式）
     if((player.cds.castLock || 0) > 0) player.cds.castLock--;   // 🔮 天堂職業施法冷卻下限（法師快·王族/黑妖慢）·autoCastSpells 依此節流攻擊魔法
-    if(canAct) autoCastSpells();   // 每 tick 嘗試自動施法，實際間隔由上方冷卻控制
+    let _afkHold = (typeof window !== 'undefined' && typeof window.__afkPlayerHold === 'function') ? !!window.__afkPlayerHold() : false;   /* 🔌 加掛版補丁 16：還沒走到射程內不出手 */
+    if(canAct && !_afkHold) autoCastSpells();   // 每 tick 嘗試自動施法，實際間隔由上方冷卻控制
 
     if(state.ticks % 10 === 0) {
         if(player.cds.pot > 0) player.cds.pot--;   // 藥水冷卻維持每秒遞減
@@ -735,7 +736,7 @@ function tick() {
     { maybeSpawnMobs(); }
     
     // 🔧 slowAtk / cleave 的遞減已由上方 statuses 通用迴圈處理（先前此處第二次遞減導致持續時間減半：寒冰吐息 8 秒變 4 秒、切割 2 秒變 1 秒）
-    if(canAct) {
+    if(canAct && !_afkHold) {   /* 🔌 加掛版補丁 16 */
         let aspdTicks = playerAttackIntervalTicks(true);
         let attackProgress = Number(state.pDmgTick);
         if (!Number.isFinite(attackProgress)) attackProgress = 0;
@@ -841,6 +842,7 @@ function tick() {
 
         // 🏰 v3.1.79 稽核修 noAttack（攻城塔/城門/藏寶箱）：不攻擊也不施法（原欄位無消費點→被打醒後會以 dmg[0,0]→1D1 戳 1 點）；置於狀態/回復處理之後、攻擊排程之前
         if (m.noAttack) continue;
+        if (typeof window !== 'undefined' && typeof window.__afkMobIdle === 'function' && window.__afkMobIdle(m, i)) continue;   /* 🔌 加掛版補丁 15：不在玩家身邊的怪不出手 */
         if(m._atkCd === undefined) m._atkCd = Math.max(1, Math.floor(m.atkSpd * 10));
         m._atkCd--;
         // ... (下方保留原有的怪物攻擊與魔法邏輯)
