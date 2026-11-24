@@ -543,7 +543,7 @@ function maybeSpawnMobs() {
             // 🏛️ 雙BOSS祭壇：不逐格自動補怪（初次生成於 changeMap；單隻陣亡不補）。防呆：兩隻皆亡卻未標記全滅 → 補標，交由 settleDeadMobs 啟動 5 秒同時復活
             if(state._kbVictory !== true && !mapState.mobs.some(m => m && m.boss)) state._kbVictory = true;
         } else {
-            let slotCount = backSlotsActive() ? 5 : 3;                          // 🆕 一般狩獵／攻城／時空裂痕／四軍王房開放後排兩格(3,4)→最多 5 隻
+            let slotCount = backSlotsActive() ? ((typeof window !== 'undefined' && typeof window.__afkBackSlots === 'function') ? window.__afkBackSlots() : 5) : 3;   /* 🔌 加掛版補丁：格數鉤子(預設 5) */                          // 🆕 一般狩獵／攻城／時空裂痕／四軍王房開放後排兩格(3,4)→最多 5 隻
             for(let i=0; i<slotCount; i++) {
                 if(mapState.mobs[i]) { mapState.spawnAt[i] = null; continue; } // 有怪：清除排程
                 if(isPureBossMap && i !== 1) continue;                          // 純 BOSS 房只生中央
