@@ -9,6 +9,11 @@
  *   ③ #pp-chat   戰鬥框下方的日誌框：全部/戰鬥/系統/世界/掉落 分頁，鏡射 #combat-log / #sys-log / #world-log
  *                 最後幾十行(cloneNode，不搬原節點)；底下輸入列代送到世界頻道 #world-input / #world-send。
  *   ④ #pp-actions 動作列：瞬移/黑市/出發(回村)/掛機設定/日誌 —— 全部是「代按」原本的按鈕或呼叫原本的入口。
+ *   ⑥ 戰鬥框撐滿整個可用高度；地圖下拉收進戰鬥框左上的「地圖名 🔍」膠囊（點開才出現），右上小地圖＋鏡頭 +／−，
+ *     左下 🔊／精簡／隱藏狀態，狀態列壓成戰鬥框底部一行。
+ *   ⑦ 動作列：更換目標／瞬移／回村(出發)／PVP／黑市／掛機設定，下方一行「自動狩獵中＋本次狩獵時間」。
+ *   ⑧ F5～F12 快捷格：鏡射 afk-skillbar 的主動技能鈕(代按)；空格按「＋」開技能頁。
+ *   ⑨ 飄字：傷害前面加「−」、未命中改成 MISS、殺怪時角色頭上飄「+N EXP」(只改顯示，不動數值)。
  *   ⑤ 底部導覽：在 #m-nav 裡加一組 角色/背包/技能/社交/更多（原按鈕只隱藏不刪：別支外掛會 querySelector
  *                 `#m-nav [data-view=…]` 再 .click()，必須留著）。元素仍在 #m-nav 內 → --m-nav-h 量到的就是新高度。
  *
@@ -21,7 +26,7 @@
   if (window.AFK_TOGGLES) {
     AFK_TOGGLES.register({
       id: 'pipiskin', name: '古金風手機介面', group: '遊戲介面', def: true,
-      desc: '手機改成深色古金框版面：上方角色資訊、戰鬥框下方日誌、底部角色／背包／技能／社交／更多'
+      desc: '手機改成深色古金框版面：上方角色資訊、撐滿畫面的戰鬥框（小地圖／地圖切換／精簡模式）、聊天框、動作列、F5～F12 快捷格、底部角色／背包／技能／社交／更多'
     });
     if (!AFK_TOGGLES.enabled('pipiskin')) return;
   }
@@ -65,7 +70,10 @@
   var SERIF = 'font-family:"Noto Serif TC","Songti TC","PMingLiU",serif;';
   var CSS = [
     /* 注入的元素預設不顯示：只有 body.pp-skin 時才出現（關掉外掛/離開遊戲＝乾淨） */
-    '#pp-head,#pp-viewbar,#pp-chat,#pp-actions,#m-nav .pp-nav,#pp-more{display:none;}',
+    '#pp-head,#pp-viewbar,#pp-chat,#pp-actions,#m-nav .pp-nav,#pp-more,#pp-ov,#pp-stat,#pp-hot{display:none;}',
+    '@keyframes ppRise{0%{opacity:0;transform:translate(-50%,0) scale(.8)}15%{opacity:1;transform:translate(-50%,-8px) scale(1.05)}100%{opacity:0;transform:translate(-50%,-46px) scale(1)}}',
+    '.pp-expf{position:fixed;z-index:9000;pointer-events:none;white-space:nowrap;transform:translate(-50%,0);animation:ppRise 1.4s ease-out forwards;' +
+      'font:800 15px/1 "Bahnschrift SemiBold","Arial Black",sans-serif;color:#ffe36b;-webkit-text-stroke:1px #3a2600;text-shadow:0 1px 0 #000,0 2px 3px #000;}',
 
     '@media ' + MOBILE_GEOM() + '{',
     /* 底色 */
@@ -112,20 +120,70 @@
     'body.pp-skin #btn-pandora-shortcut,body.pp-skin #btn-teleport,body.pp-skin #btn-return-town{display:none!important;}',
 
     /* ③ 日誌框 */
-    'body.pp-skin #pp-chat:not(.pp-off){display:flex;flex-direction:column;margin-top:6px;height:178px;' + FRAME + 'padding:0!important;overflow:hidden;}',
+    'body.pp-skin #pp-chat:not(.pp-off){display:flex;flex-direction:column;margin-top:6px;height:136px;' + FRAME + 'padding:0!important;overflow:hidden;}',
+    'body.pp-skin.pp-chatmin #pp-chat:not(.pp-off){height:auto;} body.pp-skin.pp-chatmin #pp-chat .pp-log,body.pp-skin.pp-chatmin #pp-chat .pp-in{display:none;}',
+    '#pp-chat .pp-tabs button.pp-fold{padding:2px 7px;}',
+    '#pp-chat .pp-in .pp-ch{flex:0 0 auto;align-self:center;padding:1px 5px;font-size:11px;color:' + G + ';border:1px solid #4b3a1d;border-radius:3px;background:#15110c;}',
     '#pp-chat .pp-tabs{display:flex;gap:3px;padding:4px;border-bottom:1px solid rgba(138,106,53,.45);overflow-x:auto;scrollbar-width:none;}',
-    '#pp-chat .pp-tabs button{flex:0 0 auto;padding:2px 9px;font-size:12.5px;' + BTN + '}',
+    '#pp-chat .pp-tabs button{flex:0 0 auto;padding:1px 8px;font-size:11.5px;' + BTN + '}',
     '#pp-chat .pp-tabs button.on{color:#fff3cf!important;border-color:' + G + '!important;background:linear-gradient(180deg,#4a3a1e,#251c0f)!important;}',
-    '#pp-chat .pp-log{flex:1;overflow-y:auto;padding:4px 8px;font-size:12.5px;line-height:1.45;color:#d6cfc0;}',
-    '#pp-chat .pp-log>*{margin:0!important;padding:1px 0!important;font-size:12.5px!important;background:none!important;border:0!important;}',
-    '#pp-chat .pp-empty{color:#6b6252;font-size:12px;}',
+    '#pp-chat .pp-log{flex:1;overflow-y:auto;padding:3px 8px;font-size:10px;line-height:1.35;color:#d6cfc0;}',
+    '#pp-chat .pp-log>*{margin:0!important;padding:0!important;font-size:10px!important;line-height:1.35!important;background:none!important;border:0!important;}',
+    '#pp-chat .pp-log *{font-size:inherit!important;}',
+    '#pp-chat .pp-empty{color:#6b6252;font-size:10px;}',
     '#pp-chat .pp-in{display:flex;gap:4px;padding:4px;border-top:1px solid rgba(138,106,53,.45);}',
-    '#pp-chat .pp-in input{flex:1;min-width:0;background:#0a0907;border:1px solid #4b3a1d;border-radius:4px;color:' + INK + ';padding:4px 8px;font-size:13px;}',
-    '#pp-chat .pp-in button{padding:3px 12px;font-size:13px;' + BTN + 'background:linear-gradient(180deg,#24456e,#122844)!important;border-color:#5b7fb0!important;}',
+    '#pp-chat .pp-in input{flex:1;min-width:0;background:#0a0907;border:1px solid #4b3a1d;border-radius:4px;color:' + INK + ';padding:3px 7px;font-size:12px;}',
+    '#pp-chat .pp-in button{padding:2px 10px;font-size:12px;' + BTN + 'background:linear-gradient(180deg,#24456e,#122844)!important;border-color:#5b7fb0!important;}',
 
     /* ④ 動作列 */
-    'body.pp-skin #pp-actions{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-top:6px;}',
-    '#pp-actions button{padding:7px 0;font-size:13.5px;font-weight:700;' + BTN + '}',
+    'body.pp-skin #pp-actions{display:grid;grid-template-columns:repeat(6,1fr);gap:4px;margin-top:6px;}',
+    '#pp-actions button{padding:6px 0;font-size:12.5px;font-weight:700;letter-spacing:0;line-height:1.15;' + BTN + '}',
+    '#pp-actions button.pp-two{font-size:11.5px;}',
+    /* ⑦ 狀態行 */
+    'body.pp-skin #pp-stat:not(.pp-off){display:flex;align-items:center;gap:8px;padding:2px 4px 0;font-size:11.5px;color:#cfc4a8;}',
+    '#pp-stat .pp-dot{width:7px;height:7px;border-radius:50%;background:#4ade80;box-shadow:0 0 5px #4ade80;}',
+    '#pp-stat.pp-idle .pp-dot{background:#9ca3af;box-shadow:none;} #pp-stat.pp-dead .pp-dot{background:#ef4444;box-shadow:0 0 5px #ef4444;}',
+    '#pp-stat .pp-tm{margin-left:auto;font-variant-numeric:tabular-nums;color:#e8d9b0;}',
+    /* ⑧ F5～F12 快捷格 */
+    'body.pp-skin #m-skillbar{display:none!important;}',
+    'body.pp-skin:not(.pp-compact) #pp-hot:not(.pp-off){display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-top:5px;}',
+    '#pp-hot button{position:relative;height:36px;display:flex;align-items:center;justify-content:center;padding:0;' + BTN + '}',
+    '#pp-hot button i{position:absolute;left:4px;top:2px;font:600 9.5px/1 sans-serif;font-style:normal;color:#a8946a;letter-spacing:0;}',
+    '#pp-hot button b{font-size:18px;color:#6f6250;font-weight:400;}',
+    '#pp-hot button img{width:28px;height:28px;object-fit:contain;}',
+    '#pp-hot button.is-off{opacity:.45;}',
+    '#pp-hot button u{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-decoration:none;font:700 13px/1 sans-serif;color:#fff;background:rgba(0,0,0,.55);border-radius:5px;}',
+    /* ⑥ 戰鬥框全高＋浮在上面的介面 */
+    'body.pp-skin #map-view-panel{position:relative;}',
+    'body.pp-skin:not(.pp-town) #map-view-panel>.panel-header{position:absolute!important;left:0!important;right:0!important;top:calc(var(--pp-bvt,0px) + var(--pp-bvh,300px) * .34)!important;z-index:310;display:flex!important;flex-direction:column!important;align-items:center!important;gap:4px!important;' +
+      'background:none!important;border:0!important;padding:0!important;margin:0!important;min-height:0!important;height:auto!important;pointer-events:none;box-shadow:none!important;}',
+    'body.pp-skin:not(.pp-town) #map-view-panel>.panel-header>*{pointer-events:auto;}',
+    'body.pp-skin:not(.pp-town) #map-view-panel>.panel-header>div{display:flex!important;flex-wrap:wrap!important;justify-content:center!important;gap:6px!important;width:auto!important;background:none!important;}',
+    'body.pp-skin:not(.pp-town) #map-view-panel>.panel-header #map-category,body.pp-skin:not(.pp-town) #map-view-panel>.panel-header #map-select{display:none!important;}',
+    'body.pp-skin.pp-mapopen #map-view-panel>.panel-header{top:calc(var(--pp-bvt,0px) + 36px)!important;left:6px!important;right:6px!important;padding:8px!important;' + FRAME + 'background:rgba(15,12,9,.96)!important;}',
+    'body.pp-skin.pp-mapopen #map-view-panel>.panel-header>div{width:100%!important;}',
+    'body.pp-skin.pp-mapopen #map-view-panel>.panel-header #map-category,body.pp-skin.pp-mapopen #map-view-panel>.panel-header #map-select{display:block!important;flex:1 1 40%!important;min-width:0!important;height:38px!important;}',
+    'body.pp-skin #pp-ov{display:block;position:absolute;left:0;right:0;top:var(--pp-bvt,0px);height:var(--pp-bvh,300px);z-index:300;pointer-events:none;}',
+    'body.pp-skin.pp-town #pp-ov{display:none;}',
+    '#pp-ov>*{position:absolute;pointer-events:auto;}',
+    '#pp-ov .pp-pill{left:6px;top:6px;display:flex;align-items:center;gap:6px;height:25px;max-width:56%;padding:0 10px;border-radius:13px;background:rgba(12,10,8,.8);border:1px solid ' + G2 + ';color:#f0e2bd;' +
+      'font:600 12.5px/1 ' + '"Noto Serif TC","PMingLiU",serif;text-shadow:0 1px 1px #000;white-space:nowrap;box-shadow:0 2px 5px rgba(0,0,0,.6);}',
+    '#pp-ov .pp-pill span{overflow:hidden;text-overflow:ellipsis;}',
+    '#pp-ov .pp-mm{right:4px;top:4px;width:108px;height:70px;border:1px solid ' + G2 + ';border-radius:4px;background:#000;box-shadow:0 2px 6px #000;}',
+    '#pp-ov .pp-zm{right:4px;top:78px;display:flex;gap:3px;}',
+    '#pp-ov .pp-zm button,#pp-ov .pp-tools button{width:26px;height:24px;padding:0;font-size:15px;line-height:1;' + BTN + 'background:rgba(20,16,11,.85)!important;}',
+    '#pp-ov .pp-tools{left:6px;bottom:24px;display:flex;gap:5px;}',
+    '#pp-ov .pp-tools button{width:36px;height:32px;font-size:10.5px;letter-spacing:0;line-height:1.1;white-space:normal;opacity:.88;}',
+    '#pp-ov .pp-tools button.on{border-color:' + G + '!important;color:#fff3cf!important;box-shadow:inset 0 0 8px rgba(214,180,106,.45)!important;}',
+    'body.pp-skin #battle-view #status-icon-bar{left:auto!important;right:4px!important;top:106px!important;bottom:auto!important;display:flex!important;flex-direction:column!important;flex-wrap:wrap-reverse!important;max-height:calc(100% - 140px)!important;width:auto!important;}',
+    'body.pp-skin #m-battle-buffs{position:absolute!important;left:0!important;right:0!important;top:calc(var(--pp-bvt,0px) + var(--pp-bvh,300px) - 20px)!important;height:20px!important;z-index:290;margin:0!important;padding:0 8px!important;' +
+      'background:linear-gradient(rgba(0,0,0,0),rgba(0,0,0,.7))!important;border:0!important;box-shadow:none!important;font-size:11px!important;line-height:20px!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;}',
+    'body.pp-skin.pp-town #m-battle-buffs{display:none!important;}',
+    'body.pp-skin.pp-hidestat #m-battle-buffs,body.pp-skin.pp-hidestat #battle-view #status-icon-bar,body.pp-skin.pp-hidestat #battle-view .mob-badge-row{display:none!important;}',
+    'body.pp-skin.pp-compact #pp-chat{display:none!important;}',
+    /* 飄字：黑色描邊加粗（顏色沿用核心的屬性配色） */
+    'body.pp-skin #vfx-layer .vfx-dmg:not(.vfx-miss){-webkit-text-stroke:1.2px #1a0000;text-shadow:0 1px 0 #000,0 2px 3px rgba(0,0,0,.95);}',
+    'body.pp-skin #vfx-layer .vfx-dmg.vfx-miss{font-weight:800!important;color:#f4f4f5!important;-webkit-text-stroke:1px #000;font-size:16px!important;letter-spacing:.04em;}',
     '#pp-actions button.pp-go{background:linear-gradient(180deg,#2f6db0,#173a66)!important;border-color:#7fb0e8!important;color:#fff!important;}',
     '#pp-actions button.pp-red{background:linear-gradient(180deg,#9b2a22,#561510)!important;border-color:#e07a6d!important;color:#fff!important;}',
     '#pp-actions button.pp-hide{visibility:hidden;}',
@@ -215,7 +273,7 @@
   // ---- ③ 日誌框 -------------------------------------------------------------
   var chat = null, chatTab = 'all', seq = 0, seen = new WeakMap(), lastChatSig = '';
   var SOURCES = { combat: 'combat-log', sys: 'sys-log', world: 'world-log' };
-  var TABS = [['all', '全部'], ['combat', '戰鬥'], ['sys', '系統'], ['world', '世界'], ['drop', '掉落']];
+  var TABS = [['all', '全部'], ['world', '世界'], ['drop', '掉落'], ['combat', '戰鬥'], ['sys', '系統']];
   var DROP_RE = /獲得|得到|撿|拾取|掉落/;
   function buildChat() {
     var anchor = $('m-battle-buffs') || $('m-skillbar') || $('battle-view');
@@ -223,6 +281,14 @@
     if (!chat) {
       chat = document.createElement('div'); chat.id = 'pp-chat';
       var tabs = document.createElement('div'); tabs.className = 'pp-tabs';
+      var fold = document.createElement('button'); fold.type = 'button'; fold.className = 'pp-fold'; fold.textContent = chatMin ? '▲' : '▼';
+      fold.title = '收起／展開聊天框';
+      fold.addEventListener('click', function () {
+        chatMin = !chatMin; fold.textContent = chatMin ? '▲' : '▼';
+        try { localStorage.setItem('afk-pp-chatmin', chatMin ? '1' : '0'); } catch (e) {}
+        applyModes(); relayout();
+      });
+      tabs.appendChild(fold);
       TABS.forEach(function (t) {
         var b = document.createElement('button'); b.type = 'button'; b.textContent = t[1]; b.setAttribute('data-t', t[0]);
         b.addEventListener('click', function () { chatTab = t[0]; lastChatSig = ''; markTabs(); renderChat(true); });
@@ -230,7 +296,7 @@
       });
       var log = document.createElement('div'); log.className = 'pp-log';
       var inp = document.createElement('div'); inp.className = 'pp-in';
-      inp.innerHTML = '<input type="text" maxlength="60" autocomplete="off" placeholder="向世界頻道發問…"><button type="button">送出</button>';
+      inp.innerHTML = '<span class="pp-ch">世界</span><input type="text" maxlength="60" autocomplete="off" placeholder="輸入聊天（送到世界頻道）"><button type="button">送出</button>';
       var send = function () {
         var src = $('world-input'), i = inp.querySelector('input');
         if (!src || !i.value.trim()) return;
@@ -291,12 +357,20 @@
   // ---- ④ 動作列 -------------------------------------------------------------
   var actions = null;
   var ACTS = [
+    { k: 'tg', label: '更換目標', cls: 'pp-two', fn: nextTarget, battle: true },
     { k: 'tp', label: '瞬移', src: 'btn-teleport' },
-    { k: 'bm', label: '黑市', src: 'btn-pandora-shortcut' },
     { k: 'go', label: '出發', src: 'btn-return-town', cls: 'pp-go' },
-    { k: 'set', label: '掛機設定', fn: function () { navGo('auto'); } },
-    { k: 'log', label: '日誌', fn: function () { var b = document.querySelector('#m-nav [data-view="log"]'); if (b) b.click(); } }
+    { k: 'pvp', label: 'PVP', fn: function () { navGo('social'); } },
+    { k: 'bm', label: '黑市', src: 'btn-pandora-shortcut' },
+    { k: 'set', label: '掛機設定', cls: 'pp-two', fn: function () { navGo('auto'); } }
   ];
+  // 更換目標＝依序鎖定下一隻活著的怪（核心 setTarget，跟手點怪物卡同一條路）
+  function nextTarget() {
+    try {
+      var ms = mapState.mobs, n = ms.length, cur = mapState.targetIdx | 0;
+      for (var k = 1; k <= n; k++) { var i = (cur + k) % n, m = ms[i]; if (m && !m._dead && m.curHp > 0) { setTarget(i); return; } }
+    } catch (e) {}
+  }
   function buildActions() {
     if (!chat || !chat.parentNode) return;
     if (!actions) {
@@ -312,7 +386,9 @@
   }
   function updateActions() {
     if (!actions) return;
+    var battle = inBattle();
     ACTS.forEach(function (a) {
+      if (a.battle) { actions.querySelector('[data-k="' + a.k + '"]').classList.toggle('pp-hide', !battle); return; }
       if (!a.src) return;
       var b = actions.querySelector('[data-k="' + a.k + '"]'), s = $(a.src);
       var gone = !s || s.classList.contains('hidden') || s.disabled;
@@ -345,6 +421,7 @@
     { label: '掛機設定', tab: 'automation', title: '掛機設定' },
     { label: '怪物／掉落查詢', go: function () { proxy('m-dex-open'); }, need: 'm-dex-open' },
     { label: '小百科', go: function () { proxy('m-wiki-open'); }, need: 'm-wiki-open' },
+    { label: '完整日誌', go: function () { var b = document.querySelector('#m-nav [data-view="log"]'); if (b) b.click(); } },
     { label: '登出', go: function () { var b = document.querySelector('#m-nav [data-view="logout"]'); if (b) b.click(); } }
   ];
   var navSel = null;
@@ -404,11 +481,203 @@
   }
   function closeMore() { if (more) more.classList.remove('open'); }
 
+
+  // ---- ⑥ 戰鬥框：全高＋浮動介面 ---------------------------------------------
+  var chatMin = false, compact = false, hideStat = false;
+  try { chatMin = localStorage.getItem('afk-pp-chatmin') === '1'; compact = localStorage.getItem('afk-pp-compact') === '1'; hideStat = localStorage.getItem('afk-pp-hidestat') === '1'; } catch (e) {}
+  function applyModes() {
+    var b = document.body;
+    b.classList.toggle('pp-chatmin', chatMin); b.classList.toggle('pp-compact', compact); b.classList.toggle('pp-hidestat', hideStat);
+    if (ov) {
+      ov.querySelector('[data-t="compact"]').classList.toggle('on', compact);
+      ov.querySelector('[data-t="hidestat"]').classList.toggle('on', hideStat);
+      ov.querySelector('[data-t="snd"]').textContent = soundOn() ? '🔊' : '🔇';
+    }
+  }
+  function inBattle() { var bv = $('battle-view'); return !!(bv && !bv.classList.contains('hidden')); }
+  function soundOn() {
+    var on = false;
+    try { if (typeof _sfxCfg !== 'undefined' && _sfxCfg.on) on = true; } catch (e) {}
+    try { if (typeof _bgmCfg !== 'undefined' && _bgmCfg.on) on = true; } catch (e) {}
+    return on;
+  }
+  function toggleSound() {
+    var on = !soundOn();
+    try { setSfxOn(on); } catch (e) {} try { setBgmOn(on); } catch (e) {}
+    try { _sfxSyncUI(); } catch (e) {} try { _bgmSyncUI(); } catch (e) {}
+    applyModes();
+  }
+  var ov = null, mmCv = null, mmImg = null, mmUrl = '';
+  function buildOverlay() {
+    var mp = $('map-view-panel'); if (!mp) return;
+    if (!ov) {
+      ov = document.createElement('div'); ov.id = 'pp-ov';
+      ov.innerHTML =
+        '<button type="button" class="pp-pill" data-t="map"><span class="pp-mapn">--</span>🔍</button>' +
+        '<canvas class="pp-mm" width="216" height="140"></canvas>' +
+        '<div class="pp-zm"><button type="button" data-t="zin" title="拉近">＋</button><button type="button" data-t="zout" title="拉遠">－</button></div>' +
+        '<div class="pp-tools"><button type="button" data-t="snd">🔊</button><button type="button" data-t="compact">精簡</button><button type="button" data-t="hidestat">隱藏狀態</button></div>';
+      mmCv = ov.querySelector('.pp-mm');
+      ov.addEventListener('click', function (e) {
+        var b = e.target.closest && e.target.closest('[data-t]'); if (!b) return;
+        var t = b.getAttribute('data-t'), wv = window.__afkWV;
+        if (t === 'map') { document.body.classList.toggle('pp-mapopen'); return; }
+        if (t === 'zin' && wv && wv.setCam) wv.setCam(wv.cam + 0.1);
+        if (t === 'zout' && wv && wv.setCam) wv.setCam(wv.cam - 0.1);
+        if (t === 'snd') toggleSound();
+        if (t === 'compact') { compact = !compact; try { localStorage.setItem('afk-pp-compact', compact ? '1' : '0'); } catch (e2) {} applyModes(); relayout(); }
+        if (t === 'hidestat') { hideStat = !hideStat; try { localStorage.setItem('afk-pp-hidestat', hideStat ? '1' : '0'); } catch (e2) {} applyModes(); }
+      });
+      var ms = $('map-select');
+      if (ms) ms.addEventListener('change', function () { setTimeout(function () { document.body.classList.remove('pp-mapopen'); }, 60); });
+      applyModes();
+    }
+    if (ov.parentNode !== mp) mp.appendChild(ov);
+    var sel = $('map-select'), name = (sel && sel.selectedOptions && sel.selectedOptions[0]) ? sel.selectedOptions[0].text : '--';
+    var mn = ov.querySelector('.pp-mapn'); if (mn.textContent !== name) mn.textContent = name;
+  }
+  // 戰鬥框高度＝螢幕剩下的空間（頂端資訊、下方聊天/動作列/快捷格、底部導覽都扣掉）
+  function relayout() {
+    var bv = $('battle-view'), mp = $('map-view-panel'), gs = $('game-screen');
+    var town = !inBattle();
+    document.body.classList.toggle('pp-town', town);
+    if (town) document.body.classList.remove('pp-mapopen');
+    if (!bv || !mp || town || view() !== 'center') return;
+    var navH = 0, nav = $('m-nav'); if (nav) navH = nav.getBoundingClientRect().height;
+    var below = 0;
+    [chat, actions, $('pp-stat'), $('pp-hot')].forEach(function (e) { if (e && e.offsetParent) below += e.offsetHeight + 6; });
+    var top = bv.getBoundingClientRect().top + (gs ? gs.scrollTop : 0);
+    var h = Math.round(window.innerHeight - top - below - navH - 10);
+    h = Math.max(230, Math.min(h, 900));
+    var cur = document.body.style.getPropertyValue('--wv-mh');
+    if (cur !== h + 'px') document.body.style.setProperty('--wv-mh', h + 'px');
+    var t = bv.offsetTop + 'px', bh = bv.offsetHeight + 'px';
+    if (mp.style.getPropertyValue('--pp-bvt') !== t) mp.style.setProperty('--pp-bvt', t);
+    if (mp.style.getPropertyValue('--pp-bvh') !== bh) mp.style.setProperty('--pp-bvh', bh);
+  }
+  // 小地圖：整張世界縮圖＋鏡頭框＋角色(白)／怪物(紅)／目標(黃)
+  function drawMinimap() {
+    if (!mmCv || !ov || !ov.offsetParent) return;
+    var wv = window.__afkWV, c = mmCv.getContext('2d'), W = mmCv.width, H = mmCv.height;
+    c.fillStyle = '#0b0906'; c.fillRect(0, 0, W, H);
+    if (!wv || !wv.on || !wv.ww) { mmCv.style.visibility = 'hidden'; return; }
+    mmCv.style.visibility = '';
+    var k = Math.min(W / wv.ww, H / wv.wh), ox = (W - wv.ww * k) / 2, oy = (H - wv.wh * k) / 2;
+    var bgSrc = wv.gen ? wv.genUrl : wv.bgUrl;
+    if (bgSrc && bgSrc !== mmUrl) { mmUrl = bgSrc; mmImg = new Image(); mmImg.src = bgSrc; }
+    if (mmImg && mmImg.complete && mmImg.naturalWidth) { c.globalAlpha = wv.grid ? .35 : .75; c.drawImage(mmImg, ox, oy, wv.ww * k, wv.wh * k); c.globalAlpha = 1; }
+    if (wv.grid && wv.grid.mm) { c.imageSmoothingEnabled = false; c.drawImage(wv.grid.mm, ox, oy, wv.ww * k, wv.wh * k); c.imageSmoothingEnabled = true; }   // 地形：可走淡土色、障礙深色
+    c.strokeStyle = 'rgba(255,230,170,.55)'; c.lineWidth = 2;
+    c.strokeRect(ox + wv.cx * k, oy + wv.cy * k, wv.vw * k, wv.vh * k);
+    wv.mobs.forEach(function (p, uid) {
+      var t = uid === wv.tgtUid;
+      c.fillStyle = t ? '#ffd34d' : '#ff3b30';
+      c.beginPath(); c.arc(ox + p.x * k, oy + p.y * k, t ? 5 : 3.5, 0, 7); c.fill();
+    });
+    if (wv.px != null) {
+      c.fillStyle = '#fff'; c.strokeStyle = '#1d4ed8'; c.lineWidth = 2;
+      c.beginPath(); c.arc(ox + wv.px * k, oy + wv.py * k, 5, 0, 7); c.fill(); c.stroke();
+    }
+  }
+
+  // ---- ⑦ 狀態行（自動狩獵中＋本次狩獵時間） ----------------------------------
+  var stat = null, huntMap = null, huntT0 = 0;
+  function buildStat() {
+    if (!actions || !actions.parentNode) return;
+    if (!stat) { stat = document.createElement('div'); stat.id = 'pp-stat'; stat.innerHTML = '<i class="pp-dot"></i><span class="pp-st"></span><span class="pp-tm"></span>'; }
+    if (stat.previousSibling !== actions) actions.parentNode.insertBefore(stat, actions.nextSibling);
+  }
+  function two(n) { return (n < 10 ? '0' : '') + n; }
+  function updateStat() {
+    if (!stat) return;
+    var battle = inBattle(), dead = false, cur = null;
+    try { dead = !!player.dead; cur = mapState.current; } catch (e) {}
+    stat.classList.toggle('pp-off', !battle);
+    if (!battle) { huntMap = null; return; }
+    if (cur !== huntMap) { huntMap = cur; huntT0 = Date.now(); }
+    var sec = Math.floor((Date.now() - huntT0) / 1000);
+    stat.className = dead ? 'pp-dead' : '';
+    var st = dead ? '倒下了－請按復活' : '自動狩獵中';
+    var a = stat.querySelector('.pp-st'); if (a.textContent !== st) a.textContent = st;
+    stat.querySelector('.pp-tm').textContent = '本次狩獵 ' + two(Math.floor(sec / 3600)) + ':' + two(Math.floor(sec / 60) % 60) + ':' + two(sec % 60);
+  }
+
+  // ---- ⑧ F5～F12 快捷格 -----------------------------------------------------
+  var hot = null, HOT_N = 8, lastHot = '';
+  function buildHot() {
+    if (!stat || !stat.parentNode) return;
+    if (!hot) {
+      hot = document.createElement('div'); hot.id = 'pp-hot';
+      for (var i = 0; i < HOT_N; i++) {
+        var b = document.createElement('button'); b.type = 'button'; b.setAttribute('data-i', i);
+        b.innerHTML = '<i>F' + (5 + i) + '</i><b>＋</b>';
+        b.addEventListener('click', function () {
+          var src = document.querySelectorAll('#m-skillbar .mskb-btn')[+this.getAttribute('data-i')];
+          if (src) src.click(); else navGo('skill');
+        });
+        hot.appendChild(b);
+      }
+    }
+    if (hot.previousSibling !== stat) stat.parentNode.insertBefore(hot, stat.nextSibling);
+  }
+  function updateHot() {
+    if (!hot) return;
+    hot.classList.toggle('pp-off', !inBattle());
+    var src = document.querySelectorAll('#m-skillbar .mskb-btn'), sig = '';
+    for (var i = 0; i < src.length; i++) { var im = src[i].querySelector('img'); sig += (im ? im.src : '') + '|' + src[i].className + '|' + (src[i].textContent || '').trim() + ';'; }
+    if (sig === lastHot) return; lastHot = sig;
+    var bs = hot.children;
+    for (var j = 0; j < HOT_N; j++) {
+      var s = src[j], b = bs[j], keep = '<i>F' + (5 + j) + '</i>';
+      if (!s) { b.innerHTML = keep + '<b>＋</b>'; b.className = ''; b.title = '到技能頁學習／查看技能'; continue; }
+      var img = s.querySelector('img'), cd = (s.querySelector('.mskb-cd') || {}).textContent || '';
+      b.innerHTML = keep + (img ? '<img alt="" src="' + img.getAttribute('src') + '">' : '<b>★</b>') + (s.classList.contains('is-cd') && cd.trim() ? '<u>' + cd.trim() + '</u>' : '');
+      b.className = s.classList.contains('is-off') ? 'is-off' : '';
+      b.title = s.title || s.getAttribute('aria-label') || '';
+    }
+  }
+
+  // ---- ⑨ 飄字 ---------------------------------------------------------------
+  function hookNumbers() {
+    if (typeof window._vfxNumber !== 'function' || window._vfxNumber._ppWrapped) return;
+    var orig = window._vfxNumber;
+    var w = function (x, y, dmg, ele, big) {
+      if (!document.body.classList.contains('pp-skin')) return orig.apply(this, arguments);
+      var layer = null, before = null;
+      try { layer = _vfxLayer(); before = layer.lastElementChild; } catch (e) {}
+      var r = orig.call(this, x, y, ele === 'miss' ? 'MISS' : dmg, ele, big);
+      try {
+        var el = layer && layer.lastElementChild;
+        if (el && el !== before && ele !== 'miss' && el.classList.contains('vfx-dmg')) {
+          var v = el.querySelector('.vfx-dmg-value') || el;
+          if (v.firstChild && v.firstChild.nodeType === 3 && /^\d/.test(v.firstChild.nodeValue)) v.firstChild.nodeValue = '-' + v.firstChild.nodeValue;
+        }
+      } catch (e) {}
+      return r;
+    };
+    w._ppWrapped = true; window._vfxNumber = w;
+  }
+  var lastExp = null, lastLv = null;
+  function expFloat() {
+    var e, lv;
+    try { e = player.exp; lv = player.lv; } catch (x) { return; }
+    if (lastExp == null || lv !== lastLv || !inBattle()) { lastExp = e; lastLv = lv; return; }
+    var d = e - lastExp; lastExp = e;
+    if (!(d > 0) || document.hidden) return;
+    var pm = $('player-morph-sprite'); if (!pm) return;
+    var r = pm.getBoundingClientRect(); if (!r.width && !r.height) return;
+    var f = document.createElement('div'); f.className = 'pp-expf';
+    f.textContent = '+' + (d >= 100000 ? Math.round(d / 1000) + 'k' : d) + ' EXP';
+    f.style.left = (r.left + r.width / 2) + 'px'; f.style.top = (r.top - 46) + 'px';
+    document.body.appendChild(f);
+    setTimeout(function () { if (f.parentNode) f.remove(); }, 1500);
+  }
+
   // ---- 主迴圈 ---------------------------------------------------------------
   function tick() {
     var on = document.body.classList.contains('m-mobile') && mqOn() && inGame();
     document.body.classList.toggle('pp-skin', on);
-    if (!on) { closeMore(); return; }
+    if (!on) { closeMore(); document.body.style.removeProperty('--wv-mh'); document.body.classList.remove('pp-town', 'pp-mapopen', 'pp-chatmin', 'pp-compact', 'pp-hidestat'); return; }
     try {
       ensureStyle();
       buildHead(); updateHead();
@@ -417,12 +686,21 @@
       var bv = $('battle-view');
       if (chat) chat.classList.toggle('pp-off', !bv || bv.classList.contains('hidden'));   // 村莊/城鎮時收起，讓出 NPC 清單
       buildActions(); updateActions();
+      buildStat(); updateStat();
+      buildHot(); updateHot();
+      buildOverlay(); applyModes(); relayout(); drawMinimap();
+      hookNumbers();
       if (buildNav()) { try { window.dispatchEvent(new Event('resize')); } catch (e) {} }   // 讓 afk-mobile 重量 --m-nav-h
       if (view() === 'center' && navSel) navSel = null;
       markNav();
     } catch (e) { try { console.warn('[afk-pipiskin]', e); } catch (e2) {} }
   }
 
-  function start() { ensureStyle(); tick(); setInterval(tick, TICK_MS); }
+  function start() {
+    ensureStyle(); tick(); setInterval(tick, TICK_MS);
+    // 小地圖與經驗飄字要順一點：每 150ms 一次（只在套用中且看得到時才畫）
+    setInterval(function () { if (!document.body.classList.contains('pp-skin') || document.hidden) return; try { drawMinimap(); expFloat(); } catch (e) {} }, 150);
+    window.addEventListener('resize', function () { try { relayout(); } catch (e) {} });
+  }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
 })();
