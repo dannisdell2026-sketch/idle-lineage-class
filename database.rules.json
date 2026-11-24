@@ -4,7 +4,9 @@
       "$uid": {
         ".read": "auth != null",
         ".write": "auth != null && auth.uid === $uid",
-        "name": { ".validate": "newData.isString() && newData.val().length >= 2 && newData.val().length <= 12" }
+        "name": {
+          ".validate": "newData.isString() && newData.val().length >= 2 && newData.val().length <= 12"
+        }
       }
     },
     "names": {
@@ -15,11 +17,15 @@
     },
     "presence": {
       ".read": "auth != null",
-      "$uid": { ".write": "auth != null && auth.uid === $uid" }
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid"
+      }
     },
     "chat": {
       ".read": "auth != null",
-      ".indexOn": ["t"],
+      ".indexOn": [
+        "t"
+      ],
       "$msg": {
         ".write": "auth != null && !data.exists() && newData.child('uid').val() === auth.uid",
         ".validate": "newData.hasChildren(['uid','name','text','t']) && newData.child('text').isString() && newData.child('text').val().length <= 100"
@@ -28,11 +34,16 @@
     "invites": {
       "$to": {
         ".read": "auth != null && auth.uid === $to",
-        "$from": { ".write": "auth != null && (auth.uid === $from || auth.uid === $to)" }
+        "$from": {
+          ".write": "auth != null && (auth.uid === $from || auth.uid === $to)"
+        }
       }
     },
     "trades": {
-      ".indexOn": ["a", "b"],
+      ".indexOn": [
+        "a",
+        "b"
+      ],
       ".read": "auth != null && (query.orderByChild === 'a' || query.orderByChild === 'b') && query.equalTo === auth.uid",
       "$tid": {
         ".read": "auth != null && (data.child('a').val() === auth.uid || data.child('b').val() === auth.uid)",
@@ -42,10 +53,74 @@
     },
     "market": {
       ".read": "auth != null",
-      ".indexOn": ["status", "seller", "buyer"],
+      ".indexOn": [
+        "status",
+        "seller",
+        "buyer"
+      ],
       "$lid": {
         ".write": "auth != null && ((!data.exists() && newData.child('seller').val() === auth.uid && newData.child('status').val() === 'open') || data.child('seller').val() === auth.uid || (data.child('status').val() === 'open' && newData.child('buyer').val() === auth.uid) || data.child('buyer').val() === auth.uid)",
         ".validate": "newData.child('price').isNumber() && newData.child('price').val() > 0 && (!data.exists() || newData.child('seller').val() === data.child('seller').val())"
+      }
+    },
+    "admins": {
+      ".read": "auth != null",
+      ".write": false
+    },
+    "config": {
+      ".read": true,
+      "gm": {
+        ".write": "auth != null && root.child('admins').child(auth.uid).val() === true",
+        "mobMult": {
+          ".validate": "newData.isNumber() && newData.val() >= 0.5 && newData.val() <= 3"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "events": {
+      ".read": "auth != null",
+      ".indexOn": [
+        "ts"
+      ],
+      "$id": {
+        ".write": "auth != null && !data.exists() && newData.child('uid').val() === auth.uid",
+        ".validate": "newData.hasChildren(['uid','name','type','ts'])"
+      }
+    },
+    "mchat": {
+      ".read": "auth != null",
+      "$map": {
+        ".indexOn": [
+          "t"
+        ],
+        "$msg": {
+          ".write": "auth != null && !data.exists() && newData.child('uid').val() === auth.uid",
+          ".validate": "newData.hasChildren(['uid','name','text','t']) && newData.child('text').isString() && newData.child('text').val().length <= 100"
+        }
+      }
+    },
+    "pos": {
+      ".read": "auth != null",
+      "$map": {
+        "$uid": {
+          ".write": "auth != null && auth.uid === $uid"
+        }
+      }
+    },
+    "pvp": {
+      "$id": {
+        ".read": "auth != null && (data.child('a').val() === auth.uid || data.child('b').val() === auth.uid)",
+        ".write": "auth != null && (data.exists() ? (data.child('a').val() === auth.uid || data.child('b').val() === auth.uid) : newData.child('a').val() === auth.uid)"
+      }
+    },
+    "pvpinv": {
+      "$to": {
+        ".read": "auth != null && auth.uid === $to",
+        "$id": {
+          ".write": "auth != null && (auth.uid === $to || (!data.exists() && newData.child('from').val() === auth.uid))"
+        }
       }
     }
   }
