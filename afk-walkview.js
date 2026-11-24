@@ -778,7 +778,7 @@
   function offActive(i) {
     if (state.ticks !== offTick) {
       offTick = state.ticks; offSet = {};
-      var k = Math.max(2, Math.min(4, Math.round(1 + gmMult()))), list = [];
+      var k = Math.max(2, Math.min(3, Math.round(1.5 + gmMult() * 0.4))), list = [];   // 同時圍攻：×0.5～2＝2 隻，×2.5～3＝3 隻（線上實測大地圖同時貼身 1～3 隻）
       var t = mapState.targetIdx; if (mapState.mobs[t] && !mapState.mobs[t]._dead) { offSet[t] = 1; k--; }
       for (var j = 0; j < mapState.mobs.length; j++) { var m = mapState.mobs[j]; if (m && !m._dead && m.curHp > 0 && j !== t) list.push(j); }
       list.sort(function (x, y) { return (mapState.mobs[x]._born || 0) - (mapState.mobs[y]._born || 0); });
