@@ -67,10 +67,18 @@
     me = u || null; myName = ''; isAdmin = false;
     if (!me) return;
     var uid = me.uid;
-    db.ref('users/' + uid + '/name').once('value').then(function (s) {
-      myName = s.val() || '玩家';
+    readName(uid, 5).then(function (nm) {
+      if (!me || me.uid !== uid) return;
+      myName = nm || '玩家';
       return db.ref('admins/' + uid).once('value').then(function (a) { isAdmin = a.val() === true; }, function () {});
     }).then(startSession).catch(function () {});
+  }
+  // 剛註冊完的那一刻名字還沒寫進資料庫 → 等一下再讀（最多約 7 秒）
+  function readName(uid, n) {
+    return db.ref('users/' + uid + '/name').once('value').then(function (s) {
+      if (s.val() || n <= 0) return s.val();
+      return new Promise(function (r) { setTimeout(r, 1500); }).then(function () { return readName(uid, n - 1); });
+    });
   }
   var evtOutRef = null;
   function startSession() {
