@@ -7,6 +7,7 @@
  *   - 失敗大聲：錨點找不到就 throw（exit 1）→ CI 紅，讓人知道要修錨點，而不是默默讓離線壞掉。
  *
  * 目前的核心補丁（越少越好）：
+ *   （完整清單見檔尾 PATCHES 與 docs/plugins.md；補丁 14＝大地圖多怪的格數鉤子 __afkBackSlots）
  *   1. maybeSpawnMobs — 把 js/03 tick() 內「出怪排程」那一塊 { } 抽成具名函式，讓離線快速結算
  *      能用「與線上同一份」的出怪排程（出怪延遲/BOSS 節流/後排格/席琳日光加速全照原作）。
  *      其餘離線鉤子（saveGame/loadGame/changeMap/killMob/gainItem 包裝、結算期間靜音渲染）
@@ -430,7 +431,41 @@ function patchBuyerEnHook() {
   console.log(`[patch] 收購強化值判定開放給外掛（${FILE}）`);
 }
 
-const PATCHES = [patchMaybeSpawnMobs, patchTradEnHook, patch16Slots, patchPetAnimTicker, patchBossHuntEscape, patchUseItemKeepModal, patchSellNowNoForce, patchInsigniaOrder, patchGiltasWandRecompute, patchEyeSlotInEquipList, patchRelicAffixHook, patchIllusionSetWpnProc, patchBuyerEnHook];
+// ── 補丁 14：一般狩獵「同時出現幾隻怪」改由外掛決定（大地圖多怪）──────────
+//   上游一般狩獵寫死最多 5 格(前排 0~2＋後排 3,4)：出怪排程 slotCount 與畫怪物的 _order 兩處都是字面值 5。
+//   afk-walkview 的大地圖把怪物散在整張地圖上，5 隻看起來太空 → 開一個鉤子 window.__afkBackSlots()：
+//   回傳「後排模式下總格數」(外掛自己夾在 5~8)。外掛未載／已關／鉤子不存在 → 一律 5，行為與上游完全一致。
+//   兩處必須讀同一個鉤子：出怪用的格數與畫面畫的格數一不一致，就會出現「看不到卻在打你」的怪。
+//   mapState.mobs / spawnAt 仍以 5 格初始化，多出的格位由 JS 陣列自動延長(undefined 與 null 在 == null 判斷下等價)。
+function patchBackSlotsHook() {
+  const HOOK = "((typeof window !== 'undefined' && typeof window.__afkBackSlots === 'function') ? window.__afkBackSlots() : 5)";
+  {
+    const FILE = 'js/03-combat-core.js';
+    let s = readFileSync(FILE, 'utf8');
+    if (s.includes('__afkBackSlots')) { already++; }
+    else {
+      const ANCHOR = 'let slotCount = backSlotsActive() ? 5 : 3;';
+      if (s.indexOf(ANCHOR) < 0) throw new Error(`[${FILE}] 找不到出怪格數錨點「${ANCHOR}」——上游可能改寫了 maybeSpawnMobs 的格數，請人工檢查（此補丁供大地圖多怪外掛使用）。`);
+      s = s.replace(ANCHOR, 'let slotCount = backSlotsActive() ? ' + HOOK + ' : 3;   /* 🔌 加掛版補丁：格數鉤子(預設 5) */');
+      if (!CHECK) writeFileSync(FILE, s);
+      changed++;
+      console.log(`[patch] 出怪格數開放給外掛（${FILE}）`);
+    }
+  }
+  {
+    const FILE = 'js/09-vfx-render.js';
+    let s = readFileSync(FILE, 'utf8');
+    if (s.includes('__afkBackSlots')) { already++; return; }
+    const ANCHOR = 'let _order = _back ? [0, 1, 2, 3, 4] : [0, 1, 2];';
+    if (s.indexOf(ANCHOR) < 0) throw new Error(`[${FILE}] 找不到怪物格序錨點「${ANCHOR}」——上游可能改寫了 _renderMobsImpl 的格序，請人工檢查（此補丁供大地圖多怪外掛使用）。`);
+    s = s.replace(ANCHOR, 'let _order = _back ? Array.from({ length: ' + HOOK + ' }, (_, q) => q) : [0, 1, 2];   /* 🔌 加掛版補丁：格數鉤子(預設 5＝[0..4]) */');
+    if (!CHECK) writeFileSync(FILE, s);
+    changed++;
+    console.log(`[patch] 怪物格序開放給外掛（${FILE}）`);
+  }
+}
+
+const PATCHES = [patchMaybeSpawnMobs, patchTradEnHook, patch16Slots, patchPetAnimTicker, patchBossHuntEscape, patchUseItemKeepModal, patchSellNowNoForce, patchInsigniaOrder, patchGiltasWandRecompute, patchEyeSlotInEquipList, patchRelicAffixHook, patchIllusionSetWpnProc, patchBuyerEnHook, patchBackSlotsHook];
 
 try {
   for (const p of PATCHES) p();
