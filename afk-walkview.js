@@ -936,6 +936,13 @@
     }
   }
   function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  var _hud = { t: 0, v: 0 };
+  function hudCover(bv) {
+    var now = Date.now(); if (now - _hud.t < 500) return _hud.v; _hud.t = now;
+    var v = 0;
+    try { var h = $('pp-head'), br = bv.getBoundingClientRect(); if (h && h.offsetParent) { var hr = h.getBoundingClientRect(); if (hr.bottom > br.top && hr.top < br.top + br.height * 0.5) v = Math.min(br.height * 0.55, hr.bottom - br.top); } } catch (e) {}
+    _hud.v = Math.max(0, v); return _hud.v;
+  }
   function is8Dir(m) { try { return typeof MOB_ANIM_8DIR !== 'undefined' && MOB_ANIM_8DIR.has(m.n); } catch (e) { return false; } }
 
   function aliveMobs() {
@@ -1059,7 +1066,9 @@
 
     // 鏡頭：角色置中、不超出世界邊；稍微延遲跟上（比較像攝影機在跟）
     var wantCx = clamp(wv.px - wv.vw / 2, 0, Math.max(0, wv.ww - wv.vw));
-    var wantCy = clamp(wv.py - wv.vh * 0.58, 0, Math.max(0, wv.wh - wv.vh));
+    // 上方狀態列（#pp-head）會蓋住戰鬥畫面上緣 → 角色放在「沒被蓋住那一段」的 60% 高度，貼地圖上緣時也允許鏡頭往上多捲一點，角色不會躲在狀態列底下
+    var hudTop = hudCover(bv);
+    var wantCy = clamp(wv.py - (hudTop + (wv.vh - hudTop) * 0.6), -hudTop, Math.max(0, wv.wh - wv.vh));
     var ck = Math.min(1, dt * 8);
     if (!wv._camInit || Math.abs(wantCx - wv.cx) > wv.vw || Math.abs(wantCy - wv.cy) > wv.vh) { wv.cx = wantCx; wv.cy = wantCy; wv._camInit = true; }
     else { wv.cx += (wantCx - wv.cx) * ck; wv.cy += (wantCy - wv.cy) * ck; }
