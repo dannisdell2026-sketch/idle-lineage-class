@@ -81,8 +81,8 @@
 
   // ---- 視窗 -----------------------------------------------------------------------
   var CSS = [
-    '#tks-mask{position:fixed;inset:0;z-index:99996;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center}',
-    '#tks-pan{width:min(96vw,440px);max-height:86vh;display:flex;flex-direction:column;background:linear-gradient(#2a1d0c,#150e05);border:1px solid #9a7a36;border-radius:8px;color:#ecd9a8;font:13px/1.5 "Noto Serif TC","PMingLiU",serif;box-shadow:0 8px 30px rgba(0,0,0,.7)}',
+    '#tks-mask{position:fixed;inset:0;z-index:99996;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:70px 0 12px;box-sizing:border-box}',
+    '#tks-pan{width:min(96vw,440px);max-height:100%;display:flex;flex-direction:column;background:linear-gradient(#2a1d0c,#150e05);border:1px solid #9a7a36;border-radius:8px;color:#ecd9a8;font:13px/1.5 "Noto Serif TC","PMingLiU",serif;box-shadow:0 8px 30px rgba(0,0,0,.7)}',
     '#tks-pan h3{margin:0;padding:9px 12px;border-bottom:1px solid #5a4520;color:#ffd77a;font-size:15px;display:flex;justify-content:space-between;align-items:center;gap:8px}',
     '#tks-pan h3 small{color:#cdb47a;font-weight:400;font-size:12px}',
     '#tks-pan .x{background:none;border:0;color:#cdb47a;font-size:20px;cursor:pointer;line-height:1}',
@@ -142,6 +142,7 @@
       } catch (e) {}
       return orig.apply(this, arguments);
     };
+    for (var k in orig) if (k.charAt(0) === '_') { try { w[k] = orig[k]; } catch (e) {} }   // 保留外層其他外掛的標記，避免互相重複包
     w._tks = true; window.useItem = w; return true;
   }
   // 按鈕放在目前看得到的戰鬥畫面／村莊畫面右下角（跟著畫面走，不會蓋到聊天列、送出鈕）
