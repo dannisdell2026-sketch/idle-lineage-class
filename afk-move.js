@@ -27,7 +27,7 @@
   var IW = 1920, IH = 1080;
   var VIEW_FRAC = 0.68;      // 視窗看得到地圖高度的 68%（原本 50%）→ 鏡頭拉遠
   var NPC_SC = 1.35;         // NPC 在原圖座標裡的大小（保持跟原本一樣的人／建築比例）
-  var SPEED = 210, SC = 0.85, STRIDE = 25, ACCEL_T = 0.1;   // 單位都是原圖 px
+  var SPEED = 210, SC = 1.3, STRIDE = 36, ACCEL_T = 0.1;    // 單位都是原圖 px（SC 1.3＝跟 NPC 一樣高）
   var POS_KEY = 'afk_tw_pos';
   var savedPos = {}; try { savedPos = JSON.parse(localStorage.getItem(POS_KEY) || '{}') || {}; } catch (e) {}
   var CSS = [
