@@ -81,8 +81,8 @@
 
   // ---- 開獎視窗 -------------------------------------------------------------------
   var CSS = [
-    '#dbx-mask{position:fixed;inset:0;z-index:99996;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center}',
-    '#dbx-pan{width:min(94vw,380px);max-height:86vh;display:flex;flex-direction:column;background:linear-gradient(#2a1d0c,#150e05);border:1px solid #9a7a36;border-radius:8px;color:#ecd9a8;font:13px/1.5 "Noto Serif TC","PMingLiU",serif;box-shadow:0 8px 30px rgba(0,0,0,.7)}',
+    '#dbx-mask{position:fixed;inset:0;z-index:99996;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:70px 0 12px;box-sizing:border-box}',
+    '#dbx-pan{width:min(94vw,380px);max-height:100%;display:flex;flex-direction:column;background:linear-gradient(#2a1d0c,#150e05);border:1px solid #9a7a36;border-radius:8px;color:#ecd9a8;font:13px/1.5 "Noto Serif TC","PMingLiU",serif;box-shadow:0 8px 30px rgba(0,0,0,.7)}',
     '#dbx-pan h3{margin:0;padding:9px 12px;border-bottom:1px solid #5a4520;color:#ffd77a;font-size:15px;display:flex;justify-content:space-between;align-items:center}',
     '#dbx-pan .x{background:none;border:0;color:#cdb47a;font-size:20px;cursor:pointer;line-height:1}',
     '#dbx-pan .b{padding:10px 12px;overflow-y:auto;flex:1 1 auto;min-height:0}',
