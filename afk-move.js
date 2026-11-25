@@ -31,6 +31,7 @@
     'body #tw-view #town-npc-map{display:block!important;position:absolute!important;left:0;top:0;margin:0!important;max-width:none!important;aspect-ratio:auto!important;transform-origin:0 0;will-change:transform}',
     'body.tw-on #afk-npclist{display:none!important}',
     '#tw-me{position:absolute;width:0;height:0;pointer-events:none}',
+    '#tw-me img{max-width:none!important;max-height:none!important}',   /* 全站 img{max-width:100%} 會把寬度 0 的錨點裡的圖縮成 0 */
     '#tw-me .b,#tw-me .s{position:absolute;left:0;top:0;transform-origin:50% 86%;image-rendering:auto}',
     '#tw-me .s{opacity:.85}',
     '#tw-me .nm{position:absolute;left:0;transform:translateX(-50%);white-space:nowrap;font:700 12px/1.2 "Noto Serif TC",serif;color:#fff;text-shadow:0 0 2px #000,0 0 2px #000,0 1px 2px #000;pointer-events:none}',
