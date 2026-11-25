@@ -134,8 +134,10 @@
     var log = $('world-log'); if (!log) return;
     var d = document.createElement('div');
     d.className = 'mp-msg' + (room === 'w' ? '' : ' m');
+    if (v.t) d.setAttribute('data-ts', String(v.t));   // afk-move 的時間戳用伺服器時間
     d.innerHTML = '<span class="mp-ch">[' + (room === 'w' ? '世界' : '地圖') + ']</span> <span class="mp-n" data-uid="' + esc(v.uid) + '">' + esc(v.name) + '</span>：' + esc(v.text);
     log.appendChild(d);
+    if (!v.t || Date.now() - v.t < 15000) { try { bubble(v.uid, v.text); } catch (e) {} }   // 剛說的話 → 頭上冒泡泡
     while (log.children.length > 200) log.removeChild(log.firstChild);
     log.scrollTop = log.scrollHeight;
   }
@@ -202,7 +204,7 @@
   var lastPos = '', lastPosT = 0;
   function pushPos() {
     if (!me || !curMap || document.hidden) return;
-    var W = window.__afkWV; if (!W || !W.on || !W.ww) return;
+    var W = afkView(); if (!W || !W.ww) return;
     var now = Date.now(); if (now - lastPosT < 1000) return;
     var form = null; try { form = _playerBattleForm(); } catch (e) {}
     var d = { x: Math.round(W.px / W.ww * 10000) / 10000, y: Math.round(W.py / W.wh * 10000) / 10000, w: W.walking ? 1 : 0, n: myName,
@@ -220,14 +222,32 @@
     o.d = d;
   }
   function dropOther(uid) { var o = others[uid]; if (o && o.el) o.el.remove(); delete others[uid]; }
+  // 目前畫面：村莊（afk-move 的村莊地圖）或狩獵（afk-walkview）；座標都是世界座標
+  function afkView() {
+    try { if (typeof window.__afkView === 'function') return window.__afkView(); } catch (e) {}
+    var W = window.__afkWV; return (W && W.on && W.ww) ? { host: $('battle-view'), px: W.px, py: W.py, ww: W.ww, wh: W.wh, cx: W.cx, cy: W.cy, walking: W.walking, sc: null, me: $('player-morph-sprite') } : null;
+  }
+  // 聊天泡泡：說話的人在同一張地圖、畫面看得到 → 頭上顯示 6 秒
+  function bubble(uid, text) {
+    var V = afkView(); if (!V) return;
+    var el = (me && uid === me.uid) ? V.me : (others[uid] && others[uid].el);
+    if (!el) return;
+    var old = el.querySelector(':scope > .mp-bub'); if (old) old.remove();
+    var b = document.createElement('div'); b.className = 'mp-bub'; b.textContent = String(text || '').slice(0, 60);
+    var sc = V.sc || parseFloat(getComputedStyle(V.host).getPropertyValue('--wv-sc')) || 1;
+    if (el.id === 'tw-me') b.style.bottom = Math.round(132 * sc * 0.86 + 16) + 'px';
+    else b.style.fontSize = (12 / sc).toFixed(1) + 'px';
+    el.appendChild(b);
+    clearTimeout(el._bubT); el._bubT = setTimeout(function () { b.remove(); }, 6000);
+  }
   function drawOthers() {
-    var W = window.__afkWV, bv = $('battle-view'), layer = $('mp-others');
-    if (!W || !W.on || !bv || !W.ww || !Object.keys(others).length) { if (layer) layer.style.display = 'none'; return; }
+    var W = afkView(), bv = W && W.host, layer = $('mp-others');
+    if (!W || !bv || !W.ww || !Object.keys(others).length) { if (layer) layer.style.display = 'none'; return; }
     ensureStyle();
     if (!layer) { layer = document.createElement('div'); layer.id = 'mp-others'; }
     if (layer.parentNode !== bv) bv.appendChild(layer);
     layer.style.display = '';
-    var sc = parseFloat(getComputedStyle(bv).getPropertyValue('--wv-sc')) || 1, now = Date.now();
+    var sc = W.sc || parseFloat(getComputedStyle(bv).getPropertyValue('--wv-sc')) || 1, now = Date.now();
     Object.keys(others).forEach(function (uid) {
       var o = others[uid], d = o.d;
       var tx = d.x * W.ww, ty = d.y * W.wh;
