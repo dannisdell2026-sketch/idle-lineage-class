@@ -159,7 +159,7 @@
         '<div class="row"><div class="lbl">怪物倍數（每張狩獵地圖的怪物數量）</div><div class="opts">' + opts + '</div>' +
         '<div class="note" style="margin-top:6px">基本 30 隻 × 倍數，立刻套用到目前地圖。離線掛機結算也用同一個倍數（怪越多，找下一隻怪的路越短、同時圍上來的怪也越多）。</div></div>' +
         '<div class="note">目前：×' + cfg.mobMult + '（' + GM.mobCount() + ' 隻）</div>' +
-        (GM.sections.length ? '<div class="row" style="margin-top:12px"><div class="lbl">村莊管理</div><div class="opts">' + GM.sections.map(function (s, i) { return '<button data-sec="' + i + '">' + s.label.replace(/[&<>"]/g, '') + '</button>'; }).join('') + '</div></div>' : '') +
+        (GM.sections.length ? '<div class="row" style="margin-top:12px"><div class="lbl">GM 功能</div><div class="opts">' + GM.sections.map(function (s, i) { return '<button data-sec="' + i + '">' + s.label.replace(/[&<>"]/g, '') + '</button>'; }).join('') + '</div></div>' : '') +
       '</div>' +
       '<div class="foot"><button data-act="lock">鎖回去（隱藏 GM）</button><button data-act="close">關閉</button></div>';
     p.addEventListener('click', function (e) {
