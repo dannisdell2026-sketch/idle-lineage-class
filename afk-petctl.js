@@ -105,10 +105,10 @@
 
   // ---- 介面 -----------------------------------------------------------------------
   var CSS = [
-    '#pc-btn{position:fixed;right:6px;bottom:calc(var(--m-nav-h,0px) + 116px);z-index:99989;width:40px;height:40px;border-radius:50%;border:1px solid #b08a3a;background:radial-gradient(circle at 35% 30%,#5a3c12,#1d1206);color:#ffd77a;font:700 19px/38px serif;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.6);cursor:pointer;display:none}',
+    '#pc-btn{position:absolute;right:6px;bottom:50px;z-index:70;width:40px;height:40px;border-radius:50%;border:1px solid #b08a3a;background:radial-gradient(circle at 35% 30%,#5a3c12,#1d1206);color:#ffd77a;font:700 19px/38px serif;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.6);cursor:pointer;display:none}',
     '#pc-btn.on{display:block}',
     '#pc-btn b{position:absolute;right:-4px;top:-4px;min-width:16px;height:16px;padding:0 3px;border-radius:8px;background:#2a6a2a;color:#fff;font:700 10px/16px sans-serif}',
-    '#pc-pan{position:fixed;right:52px;bottom:calc(var(--m-nav-h,0px) + 70px);z-index:99990;width:min(calc(100vw - 64px),340px);max-height:min(70vh,460px);overflow-y:auto;background:linear-gradient(rgba(42,29,12,.97),rgba(21,14,5,.97));border:1px solid #9a7a36;border-radius:8px;color:#ecd9a8;font:12px/1.4 "Noto Serif TC","PMingLiU",serif;box-shadow:0 6px 24px rgba(0,0,0,.7)}',
+    '#pc-pan{position:fixed;right:52px;bottom:120px;z-index:99990;width:min(calc(100vw - 64px),340px);max-height:min(70vh,460px);overflow-y:auto;background:linear-gradient(rgba(42,29,12,.97),rgba(21,14,5,.97));border:1px solid #9a7a36;border-radius:8px;color:#ecd9a8;font:12px/1.4 "Noto Serif TC","PMingLiU",serif;box-shadow:0 6px 24px rgba(0,0,0,.7)}',
     '#pc-pan h4{margin:0;padding:7px 10px;border-bottom:1px solid #5a4520;color:#ffd77a;font-size:14px;display:flex;justify-content:space-between;align-items:center}',
     '#pc-pan h4 button{background:none;border:0;color:#cdb47a;font-size:18px;cursor:pointer;line-height:1}',
     '#pc-pan .all{display:flex;gap:4px;align-items:center;padding:6px 10px;border-bottom:1px dashed rgba(138,106,53,.45)}',
@@ -163,6 +163,12 @@
     }
     // 只在內容變了才重畫（避免下拉選單被每秒刷新打斷）
     if (pan._html !== html && !(document.activeElement && document.activeElement.tagName === 'SELECT' && pan.contains(document.activeElement))) { pan.innerHTML = html; pan._html = html; }
+    // 面板貼在 🐾 按鈕左邊，上下夾在畫面內
+    var bt = $('pc-btn'); if (bt && bt.offsetParent) {
+      var br = bt.getBoundingClientRect(), ph = pan.offsetHeight || 200, H = window.innerHeight;
+      pan.style.right = Math.max(4, window.innerWidth - br.left + 6) + 'px';
+      pan.style.top = Math.max(6, Math.min(br.bottom - ph, H - ph - 6)) + 'px'; pan.style.bottom = 'auto';
+    }
   }
   function openPanel(on) {
     ensureStyle(); openFlag = on == null ? !openFlag : !!on;
@@ -191,13 +197,25 @@
     }
     render();
   }
+  // 按鈕放在目前看得到的戰鬥畫面／村莊畫面右下角（跟著畫面走，不會蓋到聊天列、送出鈕）
+  function anchorEl() {
+    var bv = $('battle-view'), tv = $('town-view');
+    if (bv && !bv.classList.contains('hidden') && bv.offsetHeight > 60) return bv;
+    if (tv && !tv.classList.contains('hidden') && tv.offsetHeight > 60) return tv;
+    return null;
+  }
+  function dock(b) {
+    var a = anchorEl(); if (!a) return false;
+    if (b.parentNode !== a) { try { if (getComputedStyle(a).position === 'static') a.style.position = 'relative'; } catch (e) {} a.appendChild(b); }
+    return true;
+  }
   function ensureBtn() {
     ensureStyle();
     var b = $('pc-btn');
     if (!b) { b = document.createElement('div'); b.id = 'pc-btn'; b.title = '寵物控制'; b.innerHTML = '🐾<b></b>'; b.addEventListener('click', function () { openPanel(); }); document.body.appendChild(b); }
     var title = $('btn-start-menu'), onTitle = !!(title && title.offsetParent), n = 0, has = false;
     try { has = !!(player && player.cls) && rosterN() > 0; n = outs().length; } catch (e) {}
-    var show = has && !onTitle;
+    var show = has && !onTitle && dock(b);
     b.classList.toggle('on', show);
     var c = b.querySelector('b'); if (c && c.textContent !== String(n)) c.textContent = String(n);
     if (!show && openFlag) openPanel(false);
