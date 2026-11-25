@@ -146,11 +146,16 @@
   // ③ 左上人物圖卡：實際角色（正面 d5、待機動畫）
   // =====================================================================================
   var PT = { base: '', box: null, n: 8, fr: 0, bad: {} };
+  // 正面（朝鏡頭＝方向 5）資料夾：照核心的方向對照（<職業>2／F／無／d3～d7）
   function frontBase(f) {
-    var b = f.base || '';
-    if (/d\d\/$/.test(b)) return b.replace(/d\d\/$/, 'd5/');
-    if (/classanim\//.test(b) && !PT.bad[b]) return b.replace(/\/$/, 'd5/');
-    return b;
+    var m = /^class:([^:]+):/.exec(String(f.domKey || ''));
+    if (m && !PT.bad[f.base]) {
+      var eight = false, sfx = '';
+      try { eight = typeof CLASS_ANIM_8DIR !== 'undefined' && CLASS_ANIM_8DIR.has(m[1]); } catch (e) {}
+      try { sfx = _animDirSfx(5, eight); } catch (e) { return f.base || ''; }
+      return 'assets/classanim/' + encodeURIComponent(m[1] + sfx) + '/';
+    }
+    return f.base || '';
   }
   function measure(src, cb) {
     var im = new Image();
