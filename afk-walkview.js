@@ -943,6 +943,30 @@
     try { var h = $('pp-head'), br = bv.getBoundingClientRect(); if (h && h.offsetParent) { var hr = h.getBoundingClientRect(); if (hr.bottom > br.top && hr.top < br.top + br.height * 0.5) v = Math.min(br.height * 0.55, hr.bottom - br.top); } } catch (e) {}
     _hud.v = Math.max(0, v); return _hud.v;
   }
+  // ---- 玩家手動操作（afk-move 寫入 wv.manualTo／wv.joy）-------------------------------------
+  // 回傳 null＝沒有手動操作（照自動狩獵）；true/false＝這一幀照玩家操作走了沒。操作結束後再暫停自動追怪 MANUAL_HOLD 毫秒。
+  var MANUAL_HOLD = 4000;
+  function manualStep(pa, spd, dt) {
+    var now = Date.now();
+    if (wv.joy && (wv.joy.dx || wv.joy.dy)) {
+      wv.manualTo = null; wv.wanderTo = null; wv.manualUntil = now + MANUAL_HOLD;
+      var jl = Math.hypot(wv.joy.dx, wv.joy.dy) || 1, ux = wv.joy.dx / jl, uy = wv.joy.dy / jl, want = spd * Math.max(0.35, Math.min(1, jl));
+      pa.v = Math.min(want, (pa.v || 0) + spd * dt / ACCEL_T);
+      var st = pa.v * dt, ox = pa.x, oy = pa.y, nx = pa.x + ux * st, ny = pa.y + uy * st;
+      if (walkW(nx, ny)) { pa.x = nx; pa.y = ny; } else if (walkW(nx, pa.y)) pa.x = nx; else if (walkW(pa.x, ny)) pa.y = ny;   // 撞牆沿牆滑
+      var mv = Math.hypot(pa.x - ox, pa.y - oy); pa.stride = (pa.stride || 0) + mv; pa.path = null;
+      var tw = Math.min(1, dt * 10); pa.mdx = (pa.mdx == null ? ux : pa.mdx + (ux - pa.mdx) * tw); pa.mdy = (pa.mdy == null ? uy : pa.mdy + (uy - pa.mdy) * tw);
+      return mv > 0.01;
+    }
+    if (wv.manualTo) {
+      wv.wanderTo = null; wv.manualUntil = now + MANUAL_HOLD;
+      var w = steer(pa, wv.manualTo.x, wv.manualTo.y, spd, 4, dt);
+      if (!w) wv.manualTo = null;
+      return w;
+    }
+    if (now < (wv.manualUntil || 0)) { pa.v = 0; return false; }
+    return null;
+  }
   function is8Dir(m) { try { return typeof MOB_ANIM_8DIR !== 'undefined' && MOB_ANIM_8DIR.has(m.n); } catch (e) { return false; } }
 
   function aliveMobs() {
@@ -1052,10 +1076,14 @@
         var see = los(wv.px, wv.py, tp.x, tp.y);
         if (ranged && !see) stop = MELEE_STOP;
         wv.wanderTo = null;
-        wv.walking = steer(pa, tp.x, tp.y + 4, spd, stop, dt);
+        var mmv = manualStep(pa, spd, dt);   // 玩家點地面／搖桿 → 優先照玩家操作走，暫停追怪
+        wv.walking = mmv !== null ? mmv : steer(pa, tp.x, tp.y + 4, spd, stop, dt);
         var dNow = Math.hypot(pa.x - tp.x, pa.y - tp.y - 4);
         wv.inRange = dNow <= stop + 12 && (see || dNow <= MELEE_STOP + 12);
+      } else if ((wv.walking = manualStep(pa, spd, dt)) !== null) {
+        wv.walking = !!wv.walking;
       } else {
+        wv.walking = false;
         wv.wanderT -= dt;
         if (wv.wanderT <= 0) { wv.wanderT = 2 + Math.random() * 3; wv.wanderTo = Math.random() < 0.6 ? randomWalkable(wv.px, wv.py, 40, 160) : null; }
         if (wv.wanderTo) { wv.walking = steer(pa, wv.wanderTo.x, wv.wanderTo.y, spd * 0.45, 4, dt); if (!wv.walking) wv.wanderTo = null; }
