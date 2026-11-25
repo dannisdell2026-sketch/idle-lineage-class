@@ -50,10 +50,20 @@
   function ensureStyle() { if ($('afk-move-style')) return; var s = document.createElement('style'); s.id = 'afk-move-style'; s.textContent = CSS; document.head.appendChild(s); }
 
   function form() { try { return _playerBattleForm(); } catch (e) { return null; } }
-  function frameInfo(f) {
-    var a = null; try { a = _morphBattleCache[f.key]; } catch (e) {}
-    var ok = a && a !== 'probing';
-    return { idle: ok && a.idle ? a.idle.length : 8, walk: ok && a.walk && a.walk.length ? a.walk.length : 0, shadow: !!(ok && a.shadow && a.shadow.idle && a.shadow.idle.length) };
+  // 幀數：核心快取有就照快取；還沒載入（剛進村莊）就先當職業動畫的標準 8 幀待機／4 幀走路，缺圖時 onerror 自動縮減
+  function frameInfo(f, key) {
+    var a = null; try { a = _morphBattleCache[key || f.key] || _morphBattleCache[f.key]; } catch (e) {}
+    var ok = a && a !== 'probing', cls = /^class:/.test(String(f.domKey || f.key || ''));
+    return { idle: ok && a.idle ? a.idle.length : 8, walk: ok ? (a.walk && a.walk.length ? a.walk.length : 0) : (cls ? 4 : 0), shadow: ok ? !!(a.shadow && a.shadow.idle && a.shadow.idle.length) : cls };
+  }
+  // 方向資料夾：照核心的對照（0 西北＝<職業>2、1 北＝<職業>F、2 東北＝<職業>、3～7＝<職業>d3～d7）
+  function dirInfo(f, dir) {
+    var m = /^class:([^:]+):(.*)$/.exec(String(f.domKey || ''));
+    if (!m) return { base: f.base, key: f.key };
+    var fname = m[1], eight = false, sfx = '';
+    try { eight = typeof CLASS_ANIM_8DIR !== 'undefined' && CLASS_ANIM_8DIR.has(fname); } catch (e) {}
+    try { sfx = _animDirSfx(dir, eight); } catch (e) { return { base: f.base, key: f.key }; }
+    return { base: 'assets/classanim/' + encodeURIComponent(fname + sfx) + '/', key: 'class:' + fname + sfx + ':' + m[2] };
   }
   // 村莊裡核心給的職業圖資料夾沒有方向（男妖精/）→ 自己補上方向（男妖精d3/），角色才會轉向走路；沒有方向圖的形態退回原資料夾
   var noDir = {};
@@ -119,14 +129,15 @@
   function drawMe(now) {
     var map = $('town-npc-map'); if (!map) return;
     var me = ensureMe(map), f = form(); if (!f) return;
-    var fi = frameInfo(f), walking = TW.walking && fi.walk > 0;
+    var di = dirInfo(f, TW.face), fi = frameInfo(f, di.key), walking = TW.walking && fi.walk > 0;
     var act = walking ? 'walk' : 'idle', n = walking ? fi.walk : fi.idle;
     var fr = walking ? Math.floor(TW.stride / STRIDE) % n : Math.floor(now / 125) % Math.max(1, n);
-    var base = dirBase(f.base, TW.face), pre = base + (f.wpn ? f.wpn + '_' : '');
+    var base = noDir[f.base] ? f.base : di.base, pre = base + (f.wpn ? f.wpn + '_' : '');
+    if (walking && mx[pre + 'walk'] === -1) { walking = false; act = 'idle'; n = fi.idle; fr = Math.floor(now / 125) % Math.max(1, n); }   // 這個形態沒有走路圖 → 用待機圖
     var k = pre + act; if (mx[k] != null && fr > mx[k]) fr = mx[k];
     var b = me.querySelector('.b'), s = me.querySelector('.s');
     var src = pre + act + '_' + fr + '.png';
-    if (b.getAttribute('src') !== src) { (function (kk, ff, bb) { b.onerror = function () { if (ff === 0 && bb !== f.base) noDir[f.base] = true; else mx[kk] = Math.max(0, ff - 1); }; })(k, fr, base); b.setAttribute('src', src); }
+    if (b.getAttribute('src') !== src) { (function (kk, ff, bb) { b.onerror = function () { if (ff === 0 && /walk$/.test(kk)) mx[kk] = -1; else if (ff === 0 && bb !== f.base) noDir[f.base] = true; else mx[kk] = Math.max(0, ff - 1); }; })(k, fr, base); b.setAttribute('src', src); }
     var ss = pre + act + '_s_' + fr + '.png';
     if (fi.shadow) { if (s.getAttribute('src') !== ss) { s.style.visibility = ''; s.setAttribute('src', ss); } } else s.style.visibility = 'hidden';
     var w = 199 * SC, h = 132 * SC;
