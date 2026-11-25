@@ -95,7 +95,7 @@
     '#tks-pan .list button:disabled{opacity:.4;cursor:default}',
     '#tks-pan .list button.here{border-color:#7fb0e8;color:#bfe0ff}',
     '#tks-pan .empty{grid-column:1/-1;color:#8a7a5a;text-align:center;padding:16px 0}',
-    '#tks-btn{position:fixed;right:6px;bottom:calc(var(--m-nav-h,0px) + 70px);z-index:99989;width:40px;height:40px;border-radius:50%;border:1px solid #b08a3a;background:radial-gradient(circle at 35% 30%,#5a3c12,#1d1206);color:#ffd77a;font:700 18px/38px serif;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.6);cursor:pointer;display:none}',
+    '#tks-btn{position:absolute;right:6px;bottom:6px;z-index:70;width:40px;height:40px;border-radius:50%;border:1px solid #b08a3a;background:radial-gradient(circle at 35% 30%,#5a3c12,#1d1206);color:#ffd77a;font:700 18px/38px serif;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.6);cursor:pointer;display:none}',
     '#tks-btn b{position:absolute;right:-4px;top:-4px;min-width:16px;height:16px;padding:0 3px;border-radius:8px;background:#8a2a1a;color:#fff;font:700 10px/16px sans-serif}',
     '#tks-btn.on{display:block}'
   ].join('\n');
@@ -144,14 +144,27 @@
     };
     w._tks = true; window.useItem = w; return true;
   }
-  // 右下 📜 快捷鈕：背包有說話卷軸才出現（右上角數字＝剩幾張）
+  // 按鈕放在目前看得到的戰鬥畫面／村莊畫面右下角（跟著畫面走，不會蓋到聊天列、送出鈕）
+  function anchorEl() {
+    var bv = $('battle-view'), tv = $('town-view');
+    if (bv && !bv.classList.contains('hidden') && bv.offsetHeight > 60) return bv;
+    if (tv && !tv.classList.contains('hidden') && tv.offsetHeight > 60) return tv;
+    return null;
+  }
+  function dock(b) {
+    var a = anchorEl(); if (!a) return false;
+    if (b.parentNode !== a) { try { if (getComputedStyle(a).position === 'static') a.style.position = 'relative'; } catch (e) {} a.appendChild(b); }
+    return true;
+  }
+  // 📜 快捷鈕：背包有說話卷軸才出現（右上角數字＝剩幾張）
   function ensureBtn() {
     var b = $('tks-btn');
     if (!b) { ensureStyle(); b = document.createElement('div'); b.id = 'tks-btn'; b.title = '說話卷軸'; b.innerHTML = '📜<b></b>'; b.addEventListener('click', open); document.body.appendChild(b); }
     var n = 0, inGame = false;
     try { inGame = !!(player && player.inv && mapState && mapState.current); n = inGame ? scrollCount() : 0; } catch (e) {}
     var title = $('btn-start-menu'), onTitle = !!(title && title.offsetParent);
-    b.classList.toggle('on', n > 0 && !onTitle);
+    var docked = dock(b);
+    b.classList.toggle('on', n > 0 && !onTitle && docked);
     var c = b.querySelector('b'); if (c && c.textContent !== String(n)) c.textContent = String(n);
   }
   window.AFK_TALKSCROLL = { id: ID, open: open, travel: travel };
