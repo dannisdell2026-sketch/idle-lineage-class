@@ -61,22 +61,57 @@
     t.style.cssText = 'position:fixed;left:50%;top:18%;transform:translateX(-50%);z-index:100000;background:rgba(20,14,6,.94);color:#f3d78a;border:1px solid #8a6a2a;padding:8px 14px;border-radius:6px;font:600 14px/1.4 "Noto Serif TC",serif;box-shadow:0 4px 14px rgba(0,0,0,.6)';
     document.body.appendChild(t); setTimeout(function () { t.remove(); }, 2600);
   }
+  // 碼容錯：複製連結時常被多帶標點、空白、全形字或大寫 → 只留英數、全部轉小寫再比對
+  function normCode(s) {
+    s = String(s || '').replace(/[\uFF01-\uFF5E]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); });
+    return s.toLowerCase().replace(/[^a-z0-9]/g, '');
+  }
+  function tryCode(raw) {
+    var code = normCode(raw);
+    if (!code) { toast('請輸入 GM 碼'); return Promise.resolve(false); }
+    return sha256(code).then(function (h) {
+      if (h !== GM_HASH) { toast('GM 碼不正確（收到 ' + code.length + ' 個字元，正確應為 12 個）'); return false; }
+      unlockNow('已啟用 GM 面板（左下角「GM」按鈕）'); return true;
+    }).catch(function () { toast('這個瀏覽器不支援 GM 驗證'); return false; });
+  }
+  function unlockNow(msg) {
+    try { localStorage.setItem(UNLOCK_KEY, '1'); localStorage.removeItem('afk_gm_manual_lock'); } catch (e) {}
+    if (msg) toast(msg);
+    ensureButton(); openPanel();
+  }
+  // 輸入框：網址只打 #gm（不帶碼）就跳出來手動輸入
+  function askCode() {
+    if (document.getElementById('afk-gm-ask')) return;
+    ensureStyle();
+    var mask = document.createElement('div'); mask.id = 'afk-gm-mask'; mask.setAttribute('data-ask', '1');
+    var p = document.createElement('div'); p.id = 'afk-gm-pan';
+    p.innerHTML = '<h3>輸入 GM 碼<button class="x" data-act="close">×</button></h3><div class="b">' +
+      '<input id="afk-gm-ask" autocomplete="off" autocapitalize="off" spellcheck="false" style="width:100%;box-sizing:border-box;padding:8px;font-size:16px;background:#0a0806;border:1px solid #6d5426;border-radius:5px;color:#f3e2b5">' +
+      '<div class="note" style="margin-top:6px">大小寫、空白、標點都沒關係。</div></div>' +
+      '<div class="foot"><button data-act="ok">確定</button><button data-act="close">取消</button></div>';
+    mask.appendChild(p); document.body.appendChild(mask);
+    var inp = document.getElementById('afk-gm-ask'); setTimeout(function () { inp.focus(); }, 50);
+    var go = function () { tryCode(inp.value).then(function (ok) { if (ok) { var m2 = document.querySelector('#afk-gm-mask[data-ask]'); if (m2) m2.remove(); openPanel(); } }); };
+    inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') go(); });
+    p.addEventListener('click', function (e) { var b = e.target.closest('button'); if (!b) return; if (b.dataset.act === 'ok') go(); else mask.remove(); });
+  }
   function checkUnlock() {
-    var code = null, m;
+    var code = null, m, bare = false;
     try {
-      if ((m = /(?:^|[#&])gm=([^&]+)/.exec(location.hash || ''))) code = decodeURIComponent(m[1]);
-      else if ((m = /[?&]gm=([^&]+)/.exec(location.search || ''))) code = decodeURIComponent(m[1]);
+      var hs = decodeURIComponent(location.hash || ''), qs = decodeURIComponent(location.search || '');
+      if ((m = /(?:^|[#&])gm[=:＝]?([^&]*)/i.exec(hs))) { code = m[1]; bare = !normCode(code); }
+      else if ((m = /[?&]gm=([^&]*)/i.exec(qs))) { code = m[1]; bare = !normCode(code); }
     } catch (e) {}
-    if (!code) return;
+    if (code === null) return;
     // 不論對錯都把碼從網址拿掉（避免截圖／分享網址外流）
     try { var u = new URL(location.href); u.hash = ''; u.searchParams.delete('gm'); history.replaceState(null, '', u.pathname + u.search); } catch (e) {}
-    sha256(code).then(function (h) {
-      if (h !== GM_HASH) { toast('GM 碼不正確'); return; }
-      try { localStorage.setItem(UNLOCK_KEY, '1'); } catch (e) {}
-      toast('已啟用 GM 面板（左下角「GM」按鈕）');
-      ensureButton(); openPanel();
-    }).catch(function () { toast('這個瀏覽器不支援 GM 驗證'); });
+    if (bare) { askCode(); return; }
+    tryCode(code);
   }
+  // 用「被設成 GM 的帳號」登入 → 自動開啟 GM 面板，不用輸入碼
+  setInterval(function () {
+    try { if (isGM() || localStorage.getItem('afk_gm_manual_lock') === '1') return; var me = window.AFK_MP && AFK_MP.me && AFK_MP.me(); if (me && me.admin) unlockNow('GM 帳號已登入，GM 面板已啟用'); } catch (e) {}
+  }, 3000);
 
   // ---- UI ----------------------------------------------------------------------
   var CSS = [
@@ -132,11 +167,11 @@
       if (t.dataset.v) { GM.set('mobMult', Number(t.dataset.v)); openPanel(); return; }
       if (t.dataset.sec) { var s = GM.sections[+t.dataset.sec]; closePanel(); if (s) try { s.fn(); } catch (e3) {} return; }
       if (t.dataset.act === 'close') closePanel();
-      if (t.dataset.act === 'lock') { try { localStorage.removeItem(UNLOCK_KEY); } catch (e2) {} closePanel(); ensureButton(); toast('已隱藏 GM 面板（要再用就重開 GM 連結）'); }
+      if (t.dataset.act === 'lock') { try { localStorage.removeItem(UNLOCK_KEY); localStorage.setItem('afk_gm_manual_lock', '1'); } catch (e2) {} closePanel(); ensureButton(); toast('已隱藏 GM 面板（要再用就重開 GM 連結）'); }
     });
     mask.appendChild(p); document.body.appendChild(mask);
   }
-  GM.open = openPanel;
+  GM.open = openPanel; GM.ask = askCode;
 
   function start() { checkUnlock(); ensureButton(); }
   window.addEventListener('hashchange', checkUnlock);
