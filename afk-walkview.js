@@ -90,10 +90,13 @@
   var MELEE_STOP = 54, RANGED_STOP = 150;
   var SPAWN_MIN = 150, SPAWN_MAX = 280;
   var MOB_CHASE = 72, MOB_WANDER = 28;   // 怪物追玩家／閒晃的速度（世界 px / 秒）
-  var MOB_REACH = 46, MOB_GAP = 30;      // 怪物走到離玩家多近停下／怪與怪之間至少隔多遠
+  var MOB_REACH = 50, MOB_GAP = 38;      // 怪物走到離玩家多近停下／怪與怪之間至少隔多遠
   var AGGRO_R = 200, LEASH_R = 520;      // 主動怪看到玩家的距離／追離出生點太遠就放棄
   var GEN_WORLD_H = 2100;                 // 產生地形時的世界高度（px，再乘鏡頭縮放）：跟螢幕大小無關，手機桌機一樣大，30 隻怪才散得開
-  var GEN_W = 2048, GEN_H = 1152;         // 地形貼圖解析度（在背景執行緒產生，每張地圖只做一次）
+  var GEN_W = 2048, GEN_H = 1152;         // 地形在背景執行緒產生的解析度（每張地圖只做一次）
+  var OUT_W = 2560, OUT_H = 1440;         // 最後貼圖解析度：放大後再畫上草叢／石子等細節 → 鏡頭 0.7 時約 1:1，細節清楚
+  var MOB_SCALE = 1.35;                   // 怪物比角色再放大幾倍（地圖變大後怪太小看不清楚）
+  var STRIDE = 17;                        // 走一步（換一幀走路圖）要走多少世界 px：腳步跟實際移動距離同步，不會原地滑步
   var GW_GEN = 228;                       // 產生地形的碰撞格欄數（228×128≈2.9 萬格，舊版 72×41 的 10 倍）
 
   var wv = { on: false, px: null, py: null, ww: 0, wh: 0, vw: 0, vh: 0, cx: 0, cy: 0, mobs: new Map(),
@@ -114,7 +117,12 @@
     '#battle-view.wv-on #mob-list{position:absolute!important;inset:0!important;display:block!important;gap:0!important;}',
     '#battle-view.wv-on #mob-list>.mob-target:not([data-uid]){display:none!important;}',
     '#battle-view.wv-on #mob-list>.mob-target[data-uid]{position:absolute!important;left:var(--sx,-999px)!important;top:var(--sy,-999px)!important;right:auto!important;bottom:auto!important;margin:0!important;' +
-      'transform:translate(-50%,-78%) scale(var(--wv-sc))!important;transform-origin:50% 78%!important;z-index:var(--sz,5)!important;transition:none!important;}',
+      'transform:translate(-50%,-78%) scale(var(--wv-msc,var(--wv-sc))) rotate(var(--wv-rot,0deg))!important;transform-origin:50% 78%!important;z-index:var(--sz,5)!important;transition:none!important;}',
+    /* 單方向怪：走路／面向玩家時左右翻面（八方向怪由核心自己換方向圖） */
+    '#battle-view.wv-on .mob-target[data-uid] .mob-img-inner{transform:scaleX(var(--wv-fx,1));transition:transform .12s;}',
+    /* 腳下接地陰影：怪物、角色走路時不會像飄在地上 */
+    '#battle-view.wv-on .mob-target[data-uid] .mob-img-wrap::after{content:"";position:absolute;left:50%;bottom:16%;width:44%;height:9%;transform:translateX(-50%);border-radius:50%;background:radial-gradient(ellipse,rgba(0,0,0,.45),rgba(0,0,0,0) 70%);pointer-events:none;z-index:-1;}',
+    '#battle-view.wv-on .mob-target[data-uid] .mob-img-wrap{position:relative;}',
     '#battle-view.wv-on #player-morph-sprite{left:var(--sx,50%)!important;top:var(--sy,50%)!important;bottom:auto!important;transition:none!important;' +
       'transform:translate(-50%,-86%) scale(var(--wv-sc))!important;transform-origin:50% 86%!important;z-index:var(--sz,20)!important;}',
     /* 怪物腳下血條＋目前目標紅框／「▼ 目標」字樣（--pp-hp 每幀由 frame() 寫入） */
@@ -130,6 +138,9 @@
     '#battle-view.wv-on.wv-gen{background-image:none!important;background-color:#2a2219!important;}',
     '#wv-ground{position:absolute;inset:0;z-index:0;pointer-events:none;display:none;background-size:var(--wv-ww) var(--wv-wh);background-position:calc(var(--wv-cx) * -1) calc(var(--wv-cy) * -1);background-repeat:no-repeat;}',
     '#battle-view.wv-on.wv-gen #wv-ground{display:block;}',
+    /* 細紋理層：螢幕解析度的顆粒（跟著鏡頭走），放大看地面也不會糊成一片 */
+    '#wv-detail{position:absolute;inset:0;z-index:0;pointer-events:none;display:none;mix-blend-mode:overlay;opacity:.32;background-repeat:repeat;background-size:256px 256px;background-position:calc(var(--wv-cx) * -1) calc(var(--wv-cy) * -1);}',
+    '#battle-view.wv-on.wv-gen #wv-detail{display:block;}',
     '#battle-view.wv-on.wv-gen::before{background:radial-gradient(ellipse at 50% 55%,rgba(0,0,0,0) 40%,rgba(0,0,0,.45) 100%)!important;}',
     '#battle-view.wv-on::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:1;background:radial-gradient(ellipse at 50% 55%,rgba(0,0,0,0) 30%,rgba(0,0,0,.55) 100%),rgba(10,7,4,.32);}',
     '#battle-view.wv-on::after{content:"";position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 70px rgba(0,0,0,.75);z-index:60;}'
@@ -252,15 +263,18 @@
     runGen(mapId, mapTheme(mapId), gw, gh, function (r) {
       if (!r) { try { console.warn('[afk-walkview] 地形產生失敗，改用原本地圖'); } catch (e2) {} return; }
       try {
-        var cv = document.createElement('canvas'); cv.width = GEN_W; cv.height = GEN_H;
-        cv.getContext('2d').putImageData(new ImageData(r.rgba, GEN_W, GEN_H), 0, 0);
+        var src = document.createElement('canvas'); src.width = GEN_W; src.height = GEN_H;
+        src.getContext('2d').putImageData(new ImageData(r.rgba, GEN_W, GEN_H), 0, 0);
+        var cv = document.createElement('canvas'); cv.width = OUT_W; cv.height = OUT_H;
+        var g2 = cv.getContext('2d'); g2.imageSmoothingEnabled = true; g2.imageSmoothingQuality = 'high'; g2.drawImage(src, 0, 0, OUT_W, OUT_H);
+        try { decorateGround(g2, OUT_W, OUT_H, r.block, gw, gh, mapTheme(mapId), String(mapId)); } catch (eD) { try { console.warn('[afk-walkview] 地面細節失敗', eD); } catch (e3) {} }
         cv.toBlob(function (blob) {
           if (!blob) return;
           var ent = { url: URL.createObjectURL(blob), grid: gridFromBlock(r.block, gw, gh, 1) };
           genCache.set(mapId, ent);
           if (genCache.size > 6) { var first = genCache.keys().next().value; try { URL.revokeObjectURL(genCache.get(first).url); } catch (e) {} genCache.delete(first); }
           if (wv.key === key) applyGen(key, ent);
-        }, 'image/jpeg', 0.85);
+        }, 'image/jpeg', 0.9);
       } catch (e) { try { console.warn('[afk-walkview] 地形貼圖失敗', e); } catch (e2) {} }
     });
   }
@@ -276,6 +290,170 @@
     if (g.parentNode !== bv) bv.insertBefore(g, bv.firstChild);
     var want = 'url("' + wv.genUrl + '")';
     if (wv.genUrl && g.style.backgroundImage !== want) g.style.backgroundImage = want;
+    var dt = $('wv-detail');
+    if (!dt) { dt = document.createElement('div'); dt.id = 'wv-detail'; var u = detailTexture(); if (u && u !== 'none') dt.style.backgroundImage = 'url("' + u + '")'; }
+    if (dt.parentNode !== bv || dt.previousSibling !== g) bv.insertBefore(dt, g.nextSibling);
+  }
+
+  // ---- 地面細節（主執行緒、Canvas 2D）：草叢、小花、石子、落葉、蘑菇、骨頭、水窪、裂縫、青苔、碎晶…
+  // 只畫在「上下左右都可走」的格子上，不會蓋到岩壁或障礙物；同一張地圖每次畫出來都一樣（用地圖 id 當種子）。
+  // 另外在岩壁腳下撒碎石，讓牆跟地面接起來比較自然。
+  function decorateGround(cx, W, H, block, gw, gh, theme, seedStr) {
+    var seed = 7; for (var i = 0; i < seedStr.length; i++) seed = (Math.imul(seed ^ seedStr.charCodeAt(i), 2654435761) >>> 0);
+    var rnd = function () { seed = (seed + 0x6D2B79F5) >>> 0; var t = seed; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+    var R = function (a, b) { return a + (b - a) * rnd(); };
+    var cw = W / gw, ch = H / gh;
+    var blk = function (gx, gy) { return gx < 0 || gy < 0 || gx >= gw || gy >= gh || block[gy * gw + gx]; };
+    var open = function (x, y) { var gx = Math.floor(x / cw), gy = Math.floor(y / ch); for (var j = -1; j <= 1; j++) for (var k = -1; k <= 1; k++) if (blk(gx + k, gy + j)) return false; return true; };
+    var rgba = function (c, a) { return 'rgba(' + (c[0] | 0) + ',' + (c[1] | 0) + ',' + (c[2] | 0) + ',' + a + ')'; };
+    var shade = function (c, k) { return [Math.min(255, c[0] * k), Math.min(255, c[1] * k), Math.min(255, c[2] * k)]; };
+    var shadow = function (x, y, rx, ry, a) { cx.fillStyle = 'rgba(0,0,0,' + a + ')'; cx.beginPath(); cx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); cx.fill(); };
+    var T = {
+      field: { grass: [[58, 92, 34], [86, 124, 46], [120, 156, 64]], stone: [118, 112, 98], leaf: [[150, 104, 44], [176, 132, 52], [120, 70, 34]], soil: [70, 56, 34] },
+      cave:  { grass: [[54, 70, 44], [70, 90, 54], [92, 112, 66]], stone: [96, 90, 84], leaf: [[90, 80, 66], [70, 62, 52]], soil: [34, 30, 28] },
+      sand:  { grass: [[150, 132, 74], [176, 156, 90], [124, 108, 60]], stone: [150, 128, 96], leaf: [[160, 130, 80]], soil: [120, 96, 60] },
+      snow:  { grass: [[120, 130, 116], [92, 104, 96], [150, 160, 150]], stone: [110, 116, 126], leaf: [[110, 90, 70]], soil: [180, 190, 205] }
+    }[theme] || null;
+    if (!T) T = { grass: [[58, 92, 34], [86, 124, 46], [120, 156, 64]], stone: [118, 112, 98], leaf: [[150, 104, 44]], soil: [70, 56, 34] };
+
+    function tuft(x, y, s, cols) {
+      shadow(x + s * 0.15, y + 1, s * 0.55, s * 0.18, 0.28);
+      var n = 6 + (rnd() * 6 | 0);
+      for (var b = 0; b < n; b++) {
+        var c = cols[(rnd() * cols.length) | 0], bx = x + R(-s * 0.5, s * 0.5), h = s * R(0.55, 1.2), lean = R(-s * 0.45, s * 0.45), w = R(0.9, 1.8);
+        cx.fillStyle = rgba(shade(c, R(0.8, 1.15)), 1);
+        cx.beginPath(); cx.moveTo(bx - w, y); cx.quadraticCurveTo(bx + lean * 0.3, y - h * 0.6, bx + lean, y - h); cx.quadraticCurveTo(bx + lean * 0.3 + w * 0.5, y - h * 0.5, bx + w, y); cx.closePath(); cx.fill();
+      }
+    }
+    function stone(x, y, r, c) {
+      shadow(x + r * 0.35, y + r * 0.35, r * 1.05, r * 0.55, 0.35);
+      var n = 6 + (rnd() * 3 | 0), pts = [];
+      for (var k = 0; k < n; k++) { var a = k / n * Math.PI * 2, rr = r * R(0.75, 1.1); pts.push([x + Math.cos(a) * rr, y + Math.sin(a) * rr * 0.68]); }
+      var base = shade(c, R(0.8, 1.15));
+      cx.fillStyle = rgba(base, 1); cx.beginPath(); pts.forEach(function (q, k) { if (k) cx.lineTo(q[0], q[1]); else cx.moveTo(q[0], q[1]); }); cx.closePath(); cx.fill();
+      cx.strokeStyle = 'rgba(0,0,0,.4)'; cx.lineWidth = 1; cx.stroke();
+      cx.fillStyle = rgba(shade(base, 1.35), 0.75); cx.beginPath(); cx.ellipse(x - r * 0.25, y - r * 0.22, r * 0.5, r * 0.28, -0.4, 0, Math.PI * 2); cx.fill();
+      cx.fillStyle = rgba(shade(base, 0.6), 0.5); cx.beginPath(); cx.ellipse(x + r * 0.2, y + r * 0.3, r * 0.6, r * 0.18, 0, 0, Math.PI * 2); cx.fill();
+    }
+    function pebbles(x, y, n) { for (var k = 0; k < n; k++) stone(x + R(-10, 10), y + R(-5, 5), R(1.6, 3.6), T.stone); }
+    function flowers(x, y) {
+      tuft(x, y + 2, 9, T.grass);
+      var pal = [[236, 214, 92], [240, 240, 236], [214, 92, 110], [150, 120, 220], [240, 150, 70]], pc = pal[(rnd() * pal.length) | 0], n = 3 + (rnd() * 4 | 0);
+      for (var k = 0; k < n; k++) {
+        var fx = x + R(-8, 8), fy = y + R(-7, 1), pr = R(1.4, 2.4);
+        for (var q = 0; q < 5; q++) { var a = q / 5 * Math.PI * 2; cx.fillStyle = rgba(shade(pc, R(0.9, 1.1)), 1); cx.beginPath(); cx.arc(fx + Math.cos(a) * pr, fy + Math.sin(a) * pr * 0.8, pr * 0.8, 0, Math.PI * 2); cx.fill(); }
+        cx.fillStyle = 'rgb(250,210,70)'; cx.beginPath(); cx.arc(fx, fy, pr * 0.55, 0, Math.PI * 2); cx.fill();
+      }
+    }
+    function leaves(x, y) {
+      var n = 3 + (rnd() * 6 | 0);
+      for (var k = 0; k < n; k++) { var c = T.leaf[(rnd() * T.leaf.length) | 0]; cx.save(); cx.translate(x + R(-14, 14), y + R(-8, 8)); cx.rotate(R(0, Math.PI)); cx.fillStyle = rgba(shade(c, R(0.8, 1.2)), 0.95); cx.beginPath(); cx.ellipse(0, 0, R(2.5, 4.5), R(1.2, 2), 0, 0, Math.PI * 2); cx.fill(); cx.strokeStyle = rgba(shade(c, 0.6), 0.6); cx.lineWidth = 0.6; cx.beginPath(); cx.moveTo(-3, 0); cx.lineTo(3, 0); cx.stroke(); cx.restore(); }
+    }
+    function mushroom(x, y) {
+      var n = 1 + (rnd() * 3 | 0);
+      for (var k = 0; k < n; k++) {
+        var mx = x + R(-7, 7), my = y + R(-3, 3), s = R(3, 6), red = rnd() < 0.5;
+        shadow(mx + 1.5, my + 0.5, s * 0.8, s * 0.25, 0.3);
+        cx.fillStyle = 'rgb(226,214,190)'; cx.fillRect(mx - s * 0.18, my - s * 0.9, s * 0.36, s * 0.9);
+        cx.fillStyle = red ? 'rgb(176,42,32)' : 'rgb(150,104,60)'; cx.beginPath(); cx.ellipse(mx, my - s * 0.9, s * 0.75, s * 0.5, 0, Math.PI, 0); cx.fill();
+        cx.fillStyle = 'rgba(255,255,255,.85)'; if (red) for (var q = 0; q < 3; q++) { cx.beginPath(); cx.arc(mx + R(-s * 0.45, s * 0.45), my - s * R(0.95, 1.2), s * 0.09, 0, Math.PI * 2); cx.fill(); }
+      }
+    }
+    function bones(x, y) {
+      shadow(x + 2, y + 2, 11, 3.5, 0.25);
+      cx.strokeStyle = 'rgb(214,206,186)'; cx.lineCap = 'round';
+      for (var k = 0; k < 2 + (rnd() * 2 | 0); k++) { var a = R(0, Math.PI), l = R(5, 10), bx = x + R(-6, 6), by = y + R(-3, 3); cx.lineWidth = R(1.6, 2.4); cx.beginPath(); cx.moveTo(bx - Math.cos(a) * l, by - Math.sin(a) * l * 0.5); cx.lineTo(bx + Math.cos(a) * l, by + Math.sin(a) * l * 0.5); cx.stroke(); }
+      if (rnd() < 0.5) { cx.fillStyle = 'rgb(222,214,194)'; cx.beginPath(); cx.arc(x + 5, y - 2, 4, 0, Math.PI * 2); cx.fill(); cx.fillStyle = 'rgb(30,24,20)'; cx.beginPath(); cx.arc(x + 3.6, y - 2.4, 0.9, 0, Math.PI * 2); cx.arc(x + 6.4, y - 2.4, 0.9, 0, Math.PI * 2); cx.fill(); }
+      cx.lineCap = 'butt';
+    }
+    function puddle(x, y) {
+      var rx = R(10, 24), ry = rx * R(0.35, 0.5);
+      var g = cx.createRadialGradient(x, y, 1, x, y, rx);
+      g.addColorStop(0, theme === 'snow' ? 'rgba(170,205,230,.75)' : 'rgba(30,40,52,.7)'); g.addColorStop(1, theme === 'snow' ? 'rgba(170,205,230,0)' : 'rgba(30,40,52,0)');
+      cx.fillStyle = g; cx.beginPath(); cx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); cx.fill();
+      cx.strokeStyle = 'rgba(220,235,255,.35)'; cx.lineWidth = 1; cx.beginPath(); cx.ellipse(x - rx * 0.2, y - ry * 0.25, rx * 0.45, ry * 0.3, 0, Math.PI * 1.1, Math.PI * 1.7); cx.stroke();
+    }
+    function crack(x, y) {
+      var px = x, py = y, a = R(0, Math.PI * 2), n = 3 + (rnd() * 4 | 0), seg = [];
+      for (var k = 0; k < n; k++) { a += R(-0.8, 0.8); var l = R(4, 11); var nx = px + Math.cos(a) * l, ny = py + Math.sin(a) * l * 0.6; seg.push([px, py, nx, ny]); px = nx; py = ny; }
+      cx.lineWidth = 1.2; cx.strokeStyle = 'rgba(0,0,0,.45)'; seg.forEach(function (s) { cx.beginPath(); cx.moveTo(s[0], s[1]); cx.lineTo(s[2], s[3]); cx.stroke(); });
+      cx.lineWidth = 0.8; cx.strokeStyle = 'rgba(255,255,255,.12)'; seg.forEach(function (s) { cx.beginPath(); cx.moveTo(s[0], s[1] + 1); cx.lineTo(s[2], s[3] + 1); cx.stroke(); });
+    }
+    function patch(x, y, c, a, r) {
+      var g = cx.createRadialGradient(x, y, 1, x, y, r); g.addColorStop(0, rgba(c, a)); g.addColorStop(1, rgba(c, 0));
+      cx.fillStyle = g; cx.beginPath(); cx.ellipse(x, y, r, r * 0.6, 0, 0, Math.PI * 2); cx.fill();
+    }
+    function moss(x, y) { for (var k = 0; k < 6; k++) { cx.fillStyle = rgba(shade(T.grass[0], R(0.8, 1.3)), 0.35); cx.beginPath(); cx.arc(x + R(-10, 10), y + R(-5, 5), R(3, 7), 0, Math.PI * 2); cx.fill(); } }
+    function crystal(x, y) {
+      var hue = rnd() < 0.5 ? [120, 200, 240] : [190, 140, 240];
+      patch(x, y - 3, hue, 0.35, 16);
+      for (var k = 0; k < 2 + (rnd() * 3 | 0); k++) {
+        var bx = x + R(-6, 6), h = R(6, 13), w = R(2, 3.5), lean = R(-3, 3);
+        cx.fillStyle = rgba(hue, 0.95); cx.beginPath(); cx.moveTo(bx - w, y); cx.lineTo(bx + lean, y - h); cx.lineTo(bx + w, y); cx.closePath(); cx.fill();
+        cx.fillStyle = 'rgba(255,255,255,.55)'; cx.beginPath(); cx.moveTo(bx - w * 0.3, y - 1); cx.lineTo(bx + lean, y - h); cx.lineTo(bx, y - 1); cx.closePath(); cx.fill();
+      }
+    }
+    function snowMound(x, y) {
+      shadow(x + 3, y + 2, 12, 3.5, 0.18);
+      cx.fillStyle = 'rgb(244,247,252)'; cx.beginPath(); cx.ellipse(x, y, R(7, 13), R(3, 5), 0, 0, Math.PI * 2); cx.fill();
+      cx.fillStyle = 'rgba(150,175,210,.45)'; cx.beginPath(); cx.ellipse(x + 2, y + 1.5, R(6, 10), 2, 0, 0, Math.PI); cx.fill();
+    }
+    function twigs(x, y) { cx.strokeStyle = 'rgba(80,60,40,.9)'; cx.lineWidth = 1.1; for (var k = 0; k < 3; k++) { var a = R(0, Math.PI), l = R(5, 10); cx.beginPath(); cx.moveTo(x - Math.cos(a) * l, y - Math.sin(a) * l * 0.5); cx.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l * 0.5); cx.stroke(); } }
+
+    // ① 底層：土斑／青苔／水窪／裂縫
+    var under = Math.round(W * H / 9000), k2, x, y;
+    for (k2 = 0; k2 < under; k2++) {
+      x = rnd() * W; y = rnd() * H; if (!open(x, y)) continue;
+      var u = rnd();
+      if (theme === 'field') { if (u < 0.45) patch(x, y, T.soil, 0.22, R(14, 34)); else if (u < 0.7) moss(x, y); else crack(x, y); }
+      else if (theme === 'cave') { if (u < 0.3) puddle(x, y); else if (u < 0.55) moss(x, y); else if (u < 0.8) crack(x, y); else patch(x, y, [0, 0, 0], 0.18, R(14, 30)); }
+      else if (theme === 'sand') { if (u < 0.5) patch(x, y, [96, 76, 46], 0.16, R(16, 36)); else crack(x, y); }
+      else { if (u < 0.45) puddle(x, y); else if (u < 0.75) patch(x, y, [150, 170, 200], 0.18, R(16, 34)); else crack(x, y); }
+    }
+    // ② 物件：依 y 由上往下畫（後面的會蓋到前面的，前後關係才對）
+    var items = [], N = Math.round(W * H / 2200);
+    for (k2 = 0; k2 < N; k2++) { x = rnd() * W; y = rnd() * H; if (open(x, y)) items.push([y, x, rnd()]); }
+    // 岩壁腳下的碎石：可走格且正上方是障礙
+    for (var gy = 1; gy < gh; gy++) for (var gx = 0; gx < gw; gx++) {
+      if (block[gy * gw + gx] || !block[(gy - 1) * gw + gx] || rnd() > 0.35) continue;
+      items.push([gy * ch + R(1, ch * 0.5), (gx + R(0.1, 0.9)) * cw, -1]);
+    }
+    items.sort(function (a, b) { return a[0] - b[0]; });
+    items.forEach(function (it) {
+      var y0 = it[0], x0 = it[1], v = it[2];
+      if (v < 0) { pebbles(x0, y0, 1 + (rnd() * 3 | 0)); return; }
+      if (theme === 'field') {
+        if (v < 0.5) tuft(x0, y0, R(8, 15), T.grass); else if (v < 0.64) flowers(x0, y0); else if (v < 0.8) stone(x0, y0, R(2.5, 6), T.stone);
+        else if (v < 0.9) leaves(x0, y0); else if (v < 0.96) pebbles(x0, y0, 3); else mushroom(x0, y0);
+      } else if (theme === 'cave') {
+        if (v < 0.4) stone(x0, y0, R(2.5, 7), T.stone); else if (v < 0.6) pebbles(x0, y0, 4); else if (v < 0.72) tuft(x0, y0, R(6, 10), T.grass);
+        else if (v < 0.84) bones(x0, y0); else if (v < 0.92) mushroom(x0, y0); else crystal(x0, y0);
+      } else if (theme === 'sand') {
+        if (v < 0.45) tuft(x0, y0, R(7, 13), T.grass); else if (v < 0.75) stone(x0, y0, R(2, 5.5), T.stone); else if (v < 0.9) pebbles(x0, y0, 3); else bones(x0, y0);
+      } else {
+        if (v < 0.4) snowMound(x0, y0); else if (v < 0.6) tuft(x0, y0, R(6, 11), T.grass); else if (v < 0.8) stone(x0, y0, R(2.5, 6), T.stone); else twigs(x0, y0);
+      }
+    });
+  }
+  // 螢幕解析度的細紋理（256×256，可無縫重複）：疊在地面上用 overlay 混合 → 近看也有沙土顆粒
+  var detailUrl = '';
+  function detailTexture() {
+    if (detailUrl) return detailUrl;
+    try {
+      var S = 256, cv = document.createElement('canvas'); cv.width = cv.height = S;
+      var c = cv.getContext('2d'), im = c.createImageData(S, S), d = im.data, s = 1234567;
+      var r = function () { s = (Math.imul(s, 1103515245) + 12345) >>> 0; return s / 4294967296; };
+      var coarse = new Float32Array(32 * 32); for (var i = 0; i < coarse.length; i++) coarse[i] = r();
+      for (var y = 0; y < S; y++) for (var x = 0; x < S; x++) {
+        var cx0 = (x >> 3) & 31, cy0 = (y >> 3) & 31, fx = (x & 7) / 8, fy = (y & 7) / 8;
+        var a = coarse[cy0 * 32 + cx0], b = coarse[cy0 * 32 + ((cx0 + 1) & 31)], cc = coarse[((cy0 + 1) & 31) * 32 + cx0], dd = coarse[((cy0 + 1) & 31) * 32 + ((cx0 + 1) & 31)];
+        var co = (a * (1 - fx) + b * fx) * (1 - fy) + (cc * (1 - fx) + dd * fx) * fy;
+        var v = 128 + (r() - 0.5) * 70 + (co - 0.5) * 60, o = (y * S + x) * 4;
+        d[o] = d[o + 1] = d[o + 2] = Math.max(0, Math.min(255, v)); d[o + 3] = 255;
+      }
+      c.putImageData(im, 0, 0); detailUrl = cv.toDataURL('image/png');
+    } catch (e) { detailUrl = 'none'; }
+    return detailUrl;
   }
   // 只留最大一塊相連的可走區（其餘填成障礙）；回傳可走格數
   function keepLargest(b, gw, gh) {
@@ -674,10 +852,12 @@
     a.v = Math.min(want, (a.v || 0) + speed * dt / ACCEL_T);
     var step = Math.min(direct ? dist - stop : dd, a.v * dt);
     var nx = a.x + ddx / dd * step, ny = a.y + ddy / dd * step;
+    var ox0 = a.x, oy0 = a.y;
     if (walkW(nx, ny)) { a.x = nx; a.y = ny; }
     else if (walkW(nx, a.y)) a.x = nx;
     else if (walkW(a.x, ny)) a.y = ny;
     else { a.path = null; a.rt = 0; a.v = 0; return false; }
+    a.stride = (a.stride || 0) + Math.hypot(a.x - ox0, a.y - oy0);   // 累計走了多遠 → 腳步動畫照距離播，不會滑步
     // 面向慢慢轉過去（不會一幀就 180 度大迴轉）
     var tw = Math.min(1, dt * 10);
     a.mdx = (a.mdx == null ? ddx / dd : a.mdx + (ddx / dd - a.mdx) * tw);
@@ -756,6 +936,7 @@
     }
   }
   function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  function is8Dir(m) { try { return typeof MOB_ANIM_8DIR !== 'undefined' && MOB_ANIM_8DIR.has(m.n); } catch (e) { return false; } }
 
   function aliveMobs() {
     try { return (mapState && mapState.mobs) ? mapState.mobs.filter(function (m) { return m && m.curHp > 0 && !m._dead; }) : []; } catch (e) { return []; }
@@ -885,7 +1066,9 @@
     var s = bv.style;
     s.setProperty('--wv-ww', wv.ww.toFixed(1) + 'px'); s.setProperty('--wv-wh', wv.wh.toFixed(1) + 'px');
     s.setProperty('--wv-cx', wv.cx.toFixed(1) + 'px'); s.setProperty('--wv-cy', wv.cy.toFixed(1) + 'px');
-    s.setProperty('--wv-sc', String(((isMobile() ? SPRITE_SCALE_M : SPRITE_SCALE_D) * wv.cam).toFixed(2)));
+    var _sc = (isMobile() ? SPRITE_SCALE_M : SPRITE_SCALE_D) * wv.cam;
+    s.setProperty('--wv-sc', _sc.toFixed(2));
+    s.setProperty('--wv-msc', (_sc * MOB_SCALE).toFixed(2));
 
     // 怪物卡擺位（核心重建卡片時 inline style 會被洗掉 → 每幀重設，成本只有幾個變數）
     var ml = $('mob-list'), seen = {}, byUid = {}, now = Date.now();
@@ -900,7 +1083,18 @@
         if (mb && mb._animAct && (mb._animAct.k === 'attack' || mb._animAct.k === 'skill')) {
           var age = now - mb._animAct.t;
           if (age < 320) { var lx = wv.px - p.x, ly = wv.py - p.y, ll = Math.hypot(lx, ly) || 1, lk2 = Math.sin(Math.PI * age / 320) * 10; ox = lx / ll * lk2; oy = ly / ll * lk2; }
-        } else if (p.moving) oy = -Math.abs(Math.sin(now / 95 + (uid.length * 7))) * 2.2;
+        }
+        // 擬真步態：起伏跟「實際走過的距離」同步（加速中步伐慢、全速時快、停下就停），左右小幅晃身
+        var gk = p.moving ? Math.min(1, (p.v || 0) / MOB_CHASE + 0.35) : 0, ph = (p.stride || 0) / STRIDE * Math.PI;
+        p.gk = (p.gk || 0) + (gk - (p.gk || 0)) * 0.2;   // 起步／停下平滑過渡
+        if (p.gk > 0.02) { oy += -Math.abs(Math.sin(ph)) * 3.2 * p.gk; }
+        var rot = (p.gk > 0.02 ? Math.sin(ph) * 3.5 * p.gk : 0).toFixed(1) + 'deg';
+        if (cards[i].style.getPropertyValue('--wv-rot') !== rot) cards[i].style.setProperty('--wv-rot', rot);
+        // 單方向怪：走路時面向前進方向，站著打時面向玩家（原圖預設朝左）
+        if (mb && !is8Dir(mb)) {
+          var fdx = (p.moving && Math.abs(p.mdx || 0) > 0.25 && !p.inReach) ? p.mdx : (wv.px - p.x);
+          if (Math.abs(fdx) > 6 || p.moving) { var fx = fdx > 0 ? '-1' : '1'; if (cards[i].style.getPropertyValue('--wv-fx') !== fx) cards[i].style.setProperty('--wv-fx', fx); }
+        }
         place(cards[i], p.x, p.y, ox, oy);
         var hp = mb ? Math.max(0, Math.min(100, Math.round(mb.curHp / (mb.hp || 1) * 100))) + '%' : '0%';
         if (cards[i].style.getPropertyValue('--pp-hp') !== hp) cards[i].style.setProperty('--pp-hp', hp);
@@ -917,7 +1111,7 @@
         if (_pmState && (_pmState.act === 'attack' || _pmState.act === 'skill') && tgt) {
           var ag = now - (_pmState.t || 0);
           if (ag < 300) { var tq = mobPos(lockUid), qx = tq.x - wv.px, qy = tq.y - wv.py, ql = Math.hypot(qx, qy) || 1, qk = Math.sin(Math.PI * ag / 300) * (isRanged() ? 3 : 9); px2 = qx / ql * qk; py2 = qy / ql * qk; }
-        } else if (wv.walking) py2 = -Math.abs(Math.sin(now / 90)) * 1.6;
+        } else if (wv.walking && !wv.hasWalkFrames) py2 = -Math.abs(Math.sin(((wv.pa && wv.pa.stride) || 0) / STRIDE * Math.PI)) * 1.6;
       } catch (e) {}
       place(pm, wv.px, wv.py, px2, py2);
     }
@@ -959,9 +1153,11 @@
       try {
         if (_pmState.act) return r;   // 攻擊/施法/受擊/死亡動作優先，不蓋
         player._faceD = wv.face;      // 核心停下時會轉向目標；走路中維持前進方向
+        wv.hasWalkFrames = false;
         var form = _playerBattleForm(); if (!form) return r;
         var a = _morphBattleCache[form.key]; if (!a || a === 'probing' || !a.walk || !a.walk.length) return r;
-        var f = Math.floor(Date.now() / (1000 / MOB_ANIM_FPS)) % a.walk.length, I = _pmState.imgs; if (!I) return r;
+        wv.hasWalkFrames = true;
+        var f = Math.floor((((wv.pa && wv.pa.stride) || 0) / STRIDE)) % a.walk.length, I = _pmState.imgs; if (!I) return r;
         if (I.bd.src !== a.walk[f].src) I.bd.src = a.walk[f].src;
         var ss = a.shadow && a.shadow.walk;
         if (ss && ss.length) { var sf = f % ss.length; I.sh.style.visibility = ''; if (I.sh.src !== ss[sf].src) I.sh.src = ss[sf].src; }
