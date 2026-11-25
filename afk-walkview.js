@@ -289,12 +289,26 @@
         P.meta.forEach(function (m) {   // [id, k, t, bits, 位元組數]
           var bits = m[3], len = m[4], g = new Uint8Array(n), mask = (1 << bits) - 1;
           for (var j = 0; j < n; j++) { var bi = j * bits; g[j] = (all[o + (bi >> 3)] >> (bi & 7)) & mask; }
+          if (m[1] === 'w') seaRing(g, P.w, P.h);
           map[m[0]] = { g: g, k: m[1], t: m[2] || '', w: P.w, h: P.h };
           o += len;
         });
         done(map);
       }, function () { done(null); });
     } catch (e) { done(null); }
+  }
+  // 野外：參考圖外圍（黑底）會被當成樹林；如果貼著地圖邊的那一圈障礙大多跟水相鄰（＝島），就改成海
+  function seaRing(g, w, h) {
+    var n = w * h, seen = new Uint8Array(n), q = [], i, k;
+    for (i = 0; i < w; i++) { q.push(i, (h - 1) * w + i); } for (i = 0; i < h; i++) { q.push(i * w, i * w + w - 1); }
+    var reg = [];
+    while (q.length) { var p = q.pop(); if (seen[p] || g[p] !== 1) continue; seen[p] = 1; reg.push(p); var x = p % w, y = (p / w) | 0;
+      if (x > 0) q.push(p - 1); if (x < w - 1) q.push(p + 1); if (y > 0) q.push(p - w); if (y < h - 1) q.push(p + w); }
+    var edge = 0, wet = 0;
+    for (k = 0; k < reg.length; k++) { var r = reg[k], rx = r % w, ry = (r / w) | 0, nb = [rx > 0 ? r - 1 : -1, rx < w - 1 ? r + 1 : -1, ry > 0 ? r - w : -1, ry < h - 1 ? r + w : -1], ed = false, wt = false;
+      for (var j = 0; j < 4; j++) { var c = nb[j]; if (c < 0 || seen[c]) continue; ed = true; if (g[c] === 2) wt = true; }
+      if (ed) { edge++; if (wt) wet++; } }
+    if (edge > 40 && wet / edge > 0.5) for (k = 0; k < reg.length; k++) g[reg[k]] = 2;
   }
   function loadLayout(mapId, cb) {
     var give = function () { var e = layoutMap && layoutMap[mapId]; cb(e && e.w === GW_GEN && e.h === Math.round(GW_GEN * 9 / 16) ? e : null); };
