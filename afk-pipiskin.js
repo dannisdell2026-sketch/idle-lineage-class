@@ -411,9 +411,11 @@
   ];
   var MORE = [
     { label: '隊伍', go: function () { setView('left'); } },
-    { label: '裝備', tab: 'equip', title: '裝備' },
-    { label: '武器', tab: 'weapons', title: '武器' },
-    { label: '防具', tab: 'armors', title: '防具' },
+    { label: '穿戴裝備', tab: 'equip', title: '穿戴裝備' },
+    // 背包（afk-bag）已改成四分類方格；原本的武器／防具／道具清單保留在這裡，用來「快速強化／快速廢品」批次操作
+    { label: '批次強化・武器', tab: 'weapons', title: '武器（快速強化／廢品）' },
+    { label: '批次強化・防具', tab: 'armors', title: '防具（快速強化／廢品）' },
+    { label: '批次廢品・道具', tab: 'items', title: '道具（快速廢品）' },
     { label: '收藏', go: function () { try { openCollectionPanel(); } catch (e) {} } },
     { label: '自動賣出', go: function () { proxy('btn-autosell'); } },
     { label: '血盟', tab: 'clan', title: '血盟' },
