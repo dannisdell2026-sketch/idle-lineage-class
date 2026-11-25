@@ -23,7 +23,7 @@
   // =====================================================================================
   var TW = { on: false, town: '', px: 0, py: 0, ww: 0, wh: 0, vw: 0, vh: 0, cx: 0, cy: 0, walking: false, face: 5,
              to: null, joy: null, stride: 0, v: 0, mdx: 0, mdy: 1, npcPending: null, lastT: 0, wrap: null, me: null };
-  var SPEED = 150, SC = 0.62, STRIDE = 17, ACCEL_T = 0.2;
+  var SPEED = 150, SC = 0.62, STRIDE = 17, ACCEL_T = 0.08;
   var POS_KEY = 'afk_tw_pos';
   var savedPos = {}; try { savedPos = JSON.parse(localStorage.getItem(POS_KEY) || '{}') || {}; } catch (e) {}
   var CSS = [
@@ -55,7 +55,13 @@
     var ok = a && a !== 'probing';
     return { idle: ok && a.idle ? a.idle.length : 8, walk: ok && a.walk && a.walk.length ? a.walk.length : 0, shadow: !!(ok && a.shadow && a.shadow.idle && a.shadow.idle.length) };
   }
-  function dirBase(base, dir) { return /d\d\/$/.test(base) ? base.replace(/d\d\/$/, 'd' + dir + '/') : base; }
+  // 村莊裡核心給的職業圖資料夾沒有方向（男妖精/）→ 自己補上方向（男妖精d3/），角色才會轉向走路；沒有方向圖的形態退回原資料夾
+  var noDir = {};
+  function dirBase(base, dir) {
+    if (/d\d\/$/.test(base)) return base.replace(/d\d\/$/, 'd' + dir + '/');
+    if (/classanim\//.test(base) && !noDir[base]) return base.replace(/\/$/, 'd' + dir + '/');
+    return base;
+  }
   function vec2dir(dx, dy) { try { return _vec2dir(dx, dy); } catch (e) { return 5; } }
 
   // 把 #town-npc-map 包進可捲動的視窗（#tw-view）
@@ -120,7 +126,7 @@
     var k = pre + act; if (mx[k] != null && fr > mx[k]) fr = mx[k];
     var b = me.querySelector('.b'), s = me.querySelector('.s');
     var src = pre + act + '_' + fr + '.png';
-    if (b.getAttribute('src') !== src) { (function (kk, ff) { b.onerror = function () { mx[kk] = Math.max(0, ff - 1); }; })(k, fr); b.setAttribute('src', src); }
+    if (b.getAttribute('src') !== src) { (function (kk, ff, bb) { b.onerror = function () { if (ff === 0 && bb !== f.base) noDir[f.base] = true; else mx[kk] = Math.max(0, ff - 1); }; })(k, fr, base); b.setAttribute('src', src); }
     var ss = pre + act + '_s_' + fr + '.png';
     if (fi.shadow) { if (s.getAttribute('src') !== ss) { s.style.visibility = ''; s.setAttribute('src', ss); } } else s.style.visibility = 'hidden';
     var w = 199 * SC, h = 132 * SC;
@@ -151,7 +157,7 @@
     tx = TW.to.x; ty = TW.to.y;
     var dx = tx - TW.px, dy = ty - TW.py, d = Math.hypot(dx, dy);
     if (d <= stopD) { TW.to = null; TW.walking = false; TW.v = 0; arrive(); return; }
-    want = Math.min(SPEED, Math.max(SPEED * 0.3, d * 5));
+    want = SPEED;   // 等速走到點、到了就停（不滑行減速）
     TW.v = Math.min(want, TW.v + SPEED * dt / ACCEL_T);
     var s2 = Math.min(d, TW.v * dt), ox2 = TW.px, oy2 = TW.py;
     TW.px += dx / d * s2; TW.py += dy / d * s2; clampPos();
