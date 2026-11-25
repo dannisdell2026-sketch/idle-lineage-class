@@ -43,7 +43,7 @@
   function items() { return (typeof DB !== 'undefined' && DB.items) || {}; }
   function itemCat(id) {
     var d = items()[id]; if (!d) return null;
-    if (d.doll || d.slot === 'doll') return 'doll';
+    if (d.doll || d.slot === 'doll' || d.dollBox || id === 'doll_bag' || id === 'doll_box_high') return 'doll';   // 娃娃寶箱／娃娃袋子也放在「魔法娃娃」分類
     if (d.type === 'scroll' || /卷軸/.test(d.n || '')) return 'scroll';
     if (d.type === 'heal' || d.type === 'pot') return 'pot';
     if (d.type === 'wpn' || d.type === 'arm' || d.type === 'acc') return 'eq';
