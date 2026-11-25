@@ -22,8 +22,12 @@
   // ① 村莊走動
   // =====================================================================================
   var TW = { on: false, town: '', px: 0, py: 0, ww: 0, wh: 0, vw: 0, vh: 0, cx: 0, cy: 0, walking: false, face: 5,
-             to: null, joy: null, stride: 0, v: 0, mdx: 0, mdy: 1, npcPending: null, lastT: 0, wrap: null, me: null };
-  var SPEED = 150, SC = 0.62, STRIDE = 17, ACCEL_T = 0.08;
+             to: null, joy: null, stride: 0, v: 0, mdx: 0, mdy: 1, npcPending: null, lastT: 0, wrap: null, me: null, z: 0.5, path: null, hx: null, hy: null };
+  // 世界座標＝村莊原圖的像素（1920×1080，不再壓扁/拉伸）；整張圖用 scale(TW.z) 縮到視窗裡
+  var IW = 1920, IH = 1080;
+  var VIEW_FRAC = 0.68;      // 視窗看得到地圖高度的 68%（原本 50%）→ 鏡頭拉遠
+  var NPC_SC = 1.35;         // NPC 在原圖座標裡的大小（保持跟原本一樣的人／建築比例）
+  var SPEED = 210, SC = 0.85, STRIDE = 25, ACCEL_T = 0.1;   // 單位都是原圖 px
   var POS_KEY = 'afk_tw_pos';
   var savedPos = {}; try { savedPos = JSON.parse(localStorage.getItem(POS_KEY) || '{}') || {}; } catch (e) {}
   var CSS = [
@@ -31,6 +35,14 @@
     'body #tw-view #town-npc-map{display:block!important;position:absolute!important;left:0;top:0;margin:0!important;max-width:none!important;aspect-ratio:auto!important;transform-origin:0 0;will-change:transform}',
     'body.tw-on #afk-npclist{display:none!important}',
     '#tw-me{position:absolute;width:0;height:0;pointer-events:none}',
+    /* NPC：錨點在腳底（translate(-50%,-100%)）→ 以 0 0 為原點縮放，腳的位置不變 */
+    '#tw-view .town-npc{transform-origin:0 0!important;scale:var(--tw-ns,1)}',
+    /* 地圖整張縮小後，名字／泡泡反向放大，螢幕上維持原本字級 */
+    '#town-npc-map #tw-me .mp-bub{font-size:calc(8pt / var(--tw-z,1))!important;max-width:calc(180px / var(--tw-z,1))!important;padding:calc(3px / var(--tw-z,1)) calc(7px / var(--tw-z,1))!important;border-radius:calc(8px / var(--tw-z,1))!important}',
+    '#town-npc-map .op .mp-bub{font-size:calc(8pt / var(--tw-z,1) / var(--tw-sc,1))!important;max-width:calc(180px / var(--tw-z,1) / var(--tw-sc,1))!important}',
+    '#town-npc-map .op b{font-size:calc(11px / var(--tw-z,1) / var(--tw-sc,1))!important}',
+    '#battle-view .op .mp-bub,#player-morph-sprite .mp-bub{font-size:calc(8pt / var(--wv-sc,1))!important}',
+    '#tw-walls{position:absolute;left:0;top:0;width:1920px;height:1080px;pointer-events:none;opacity:.45;z-index:1}',
     '#tw-me img{max-width:none!important;max-height:none!important}',   /* 全站 img{max-width:100%} 會把寬度 0 的錨點裡的圖縮成 0 */
     '#tw-me .b,#tw-me .s{position:absolute;left:0;top:0;transform-origin:50% 86%;image-rendering:auto}',
     '#tw-me .s{opacity:.85}',
@@ -41,9 +53,11 @@
     '#mv-joy i{position:absolute;left:50%;top:50%;width:50px;height:50px;margin:-25px 0 0 -25px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ffe9a8,#b7862e);box-shadow:0 2px 6px rgba(0,0,0,.6)}',
     '#battle-view.wv-on{touch-action:none}',
     /* 時間戳 */
-    '.afk-ts{color:#8d8a7e;font-size:.82em;margin-right:4px;font-family:ui-monospace,Consolas,monospace;font-weight:400}',
+    /* 對話／戰鬥／系統日誌文字：8 號字（8pt） */
+    '#combat-log,#sys-log,#world-log,#combat-log *,#sys-log *,#world-log *{font-size:8pt!important;line-height:1.4!important}',
+    '.afk-ts{color:#8d8a7e;font-size:.82em!important;margin-right:4px;font-family:ui-monospace,Consolas,monospace;font-weight:400}',
     /* 聊天泡泡（afk-mp 用） */
-    '.mp-bub{position:absolute;left:50%;bottom:100%;transform:translateX(-50%);max-width:180px;padding:3px 7px;border-radius:8px;background:rgba(255,255,255,.94);color:#222;font:600 12px/1.35 "Noto Serif TC",sans-serif;white-space:normal;word-break:break-all;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,.45);pointer-events:none;z-index:50;animation:mvMark2 .2s ease-out}',
+    '.mp-bub{position:absolute;left:50%;bottom:100%;transform:translateX(-50%);max-width:180px;padding:3px 7px;border-radius:8px;background:rgba(255,255,255,.94);color:#222;font:600 8pt/1.35 "Noto Serif TC",sans-serif;white-space:normal;word-break:break-all;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,.45);pointer-events:none;z-index:50;animation:mvMark2 .2s ease-out}',
     '.mp-bub:after{content:"";position:absolute;left:50%;top:100%;margin-left:-5px;border:5px solid transparent;border-top-color:rgba(255,255,255,.94)}',
     '@keyframes mvMark2{from{transform:translateX(-50%) scale(.6);opacity:0}to{transform:translateX(-50%);opacity:1}}'
   ].join('\n');
@@ -94,21 +108,114 @@
   function layout() {
     var wrap = TW.wrap, map = $('town-npc-map'); if (!wrap || !map) return false;
     TW.vw = wrap.clientWidth; TW.vh = wrap.clientHeight; if (!TW.vw || !TW.vh) return false;
-    var wh = Math.max(TW.vh * 2, 420), ww = Math.max(wh * 16 / 9, TW.vw * 1.4);
-    if (Math.abs(ww - TW.ww) > 1 || Math.abs(wh - TW.wh) > 1) {
-      var kx = TW.ww ? ww / TW.ww : 1, ky = TW.wh ? wh / TW.wh : 1;
-      TW.px *= kx; TW.py *= ky; TW.ww = ww; TW.wh = wh;
-      map.style.width = ww.toFixed(0) + 'px'; map.style.height = wh.toFixed(0) + 'px';
+    TW.z = Math.max(TW.vh / (IH * VIEW_FRAC), TW.vw / IW);
+    if (TW.ww !== IW || TW.wh !== IH || map.style.width !== IW + 'px') {
+      TW.ww = IW; TW.wh = IH; map.style.width = IW + 'px'; map.style.height = IH + 'px';
     }
+    var zs = TW.z.toFixed(4);
+    if (map.style.getPropertyValue('--tw-z') !== zs) { map.style.setProperty('--tw-z', zs); map.style.setProperty('--tw-sc', String(SC)); map.style.setProperty('--tw-ns', String(NPC_SC)); }
     return true;
   }
-  var Y0 = 0.16, Y1 = 0.97, X0 = 0.03, X1 = 0.97;   // 可走範圍（地圖上緣多半是建築／天空）
-  function clampPos() { TW.px = clamp(TW.px, TW.ww * X0, TW.ww * X1); TW.py = clamp(TW.py, TW.wh * Y0, TW.wh * Y1); }
+
+  // ---- 建築／圍牆／水面碰撞（afk-townwalls.js 描好的多邊形 → 192×108 格，每格 10 原圖 px）--------------
+  var GW = 192, GH = 108, grid = null;
+  function townImg(t) { try { return (typeof TOWN_BG_1920 !== 'undefined' && TOWN_BG_1920[t]) || ''; } catch (e) { return ''; } }
+  function buildGrid(t) {
+    var polys = null; try { polys = window.AFK_TOWN_WALLS && AFK_TOWN_WALLS[townImg(t)]; } catch (e) {}
+    var g = new Uint8Array(GW * GH), x, y;
+    for (x = 0; x < GW; x++) { g[x] = 1; g[(GH - 1) * GW + x] = 1; }
+    for (y = 0; y < GH; y++) { g[y * GW] = 1; g[y * GW + GW - 1] = 1; }
+    (polys || []).forEach(function (p) {
+      var xs = [], ys = [];
+      for (var i = 0; i + 1 < p.length; i += 2) { xs.push(p[i] / 100 * GW); ys.push(p[i + 1] / 100 * GH); }
+      var y0 = Math.max(0, Math.floor(Math.min.apply(null, ys))), y1 = Math.min(GH - 1, Math.ceil(Math.max.apply(null, ys)));
+      for (var cy = y0; cy <= y1; cy++) {
+        var yy = cy + 0.5, nodes = [];
+        for (var a = 0, b = xs.length - 1; a < xs.length; b = a++) if ((ys[a] < yy) !== (ys[b] < yy)) nodes.push(xs[a] + (yy - ys[a]) / (ys[b] - ys[a]) * (xs[b] - xs[a]));
+        nodes.sort(function (m, n) { return m - n; });
+        for (var k = 0; k + 1 < nodes.length; k += 2) {
+          var x0 = Math.max(0, Math.ceil(nodes[k] - 0.5)), x1 = Math.min(GW - 1, Math.floor(nodes[k + 1] - 0.5));
+          for (var cx = x0; cx <= x1; cx++) g[cy * GW + cx] = 1;
+        }
+      }
+    });
+    grid = { g: g, town: t, has: !!(polys && polys.length) };
+    if (TW.wallsOn) drawWalls();
+  }
+  function cellX(x) { return Math.min(GW - 1, Math.max(0, Math.floor(x / IW * GW))); }
+  function cellY(y) { return Math.min(GH - 1, Math.max(0, Math.floor(y / IH * GH))); }
+  function freeAt(x, y) { return !grid || !grid.g[cellY(y) * GW + cellX(x)]; }
+  function nearestFree(x, y) {
+    if (freeAt(x, y)) return { x: x, y: y };
+    var X0 = cellX(x), Y0 = cellY(y);
+    for (var r = 1; r < 60; r++) {
+      var best = null, bd = 1e9;
+      for (var j = -r; j <= r; j++) for (var k = -r; k <= r; k++) {
+        if (Math.max(Math.abs(j), Math.abs(k)) !== r) continue;
+        var X = X0 + k, Y = Y0 + j; if (X < 0 || Y < 0 || X >= GW || Y >= GH || grid.g[Y * GW + X]) continue;
+        var d = j * j + k * k; if (d < bd) { bd = d; best = { x: (X + 0.5) * IW / GW, y: (Y + 0.5) * IH / GH }; }
+      }
+      if (best) return best;
+    }
+    return { x: x, y: y };
+  }
+  function losT(x0, y0, x1, y1) { var n = Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 4); for (var i = 1; i <= n; i++) { var q = i / n; if (!freeAt(x0 + (x1 - x0) * q, y0 + (y1 - y0) * q)) return false; } return true; }
+  // A*（八方向、不切牆角）→ 回傳路點；之後每幀用「看得到就跳過」把折線拉直
+  function pathTo(sx, sy, tx, ty) {
+    if (!grid) return [{ x: tx, y: ty }];
+    if (losT(sx, sy, tx, ty)) return [{ x: tx, y: ty }];
+    var B = grid.g, n = GW * GH, s = cellY(sy) * GW + cellX(sx), e = cellY(ty) * GW + cellX(tx);
+    if (B[e]) return null;
+    var gs = new Float32Array(n), from = new Int32Array(n), st = new Uint8Array(n), heap = [], hf = [];
+    for (var i = 0; i < n; i++) gs[i] = 1e9;
+    var ex = e % GW, ey = (e / GW) | 0;
+    var hh = function (c) { var dx = Math.abs(c % GW - ex), dy = Math.abs(((c / GW) | 0) - ey); return Math.max(dx, dy) + 0.414 * Math.min(dx, dy); };
+    var push = function (c, f) { heap.push(c); hf.push(f); var k = heap.length - 1; while (k > 0) { var p = (k - 1) >> 1; if (hf[p] <= hf[k]) break; var tt = heap[p]; heap[p] = heap[k]; heap[k] = tt; tt = hf[p]; hf[p] = hf[k]; hf[k] = tt; k = p; } };
+    var pop = function () { var top = heap[0], li = heap.pop(), lf = hf.pop(); if (heap.length) { heap[0] = li; hf[0] = lf; var k = 0; for (;;) { var l = k * 2 + 1, r2 = l + 1, m = k; if (l < heap.length && hf[l] < hf[m]) m = l; if (r2 < heap.length && hf[r2] < hf[m]) m = r2; if (m === k) break; var tt = heap[m]; heap[m] = heap[k]; heap[k] = tt; tt = hf[m]; hf[m] = hf[k]; hf[k] = tt; k = m; } } return top; };
+    gs[s] = 0; from[s] = -1; push(s, hh(s));
+    var found = false, it = 0;
+    while (heap.length && it++ < 40000) {
+      var c = pop(); if (c === e) { found = true; break; } if (st[c]) continue; st[c] = 1;
+      var cx = c % GW, cy = (c / GW) | 0;
+      for (var dy = -1; dy <= 1; dy++) for (var dx = -1; dx <= 1; dx++) {
+        if (!dx && !dy) continue;
+        var nx = cx + dx, ny = cy + dy; if (nx < 0 || ny < 0 || nx >= GW || ny >= GH) continue;
+        var ni = ny * GW + nx; if (B[ni] || st[ni]) continue;
+        if (dx && dy && (B[cy * GW + nx] || B[ny * GW + cx])) continue;
+        var ng = gs[c] + (dx && dy ? 1.414 : 1);
+        if (ng < gs[ni]) { gs[ni] = ng; from[ni] = c; push(ni, ng + hh(ni)); }
+      }
+    }
+    if (!found) return null;
+    var path = [{ x: tx, y: ty }], cur = from[e];
+    while (cur !== s && cur >= 0) { path.push({ x: (cur % GW + 0.5) * IW / GW, y: (((cur / GW) | 0) + 0.5) * IH / GH }); cur = from[cur]; }
+    return path.reverse();
+  }
+  // GM 檢查用：AFK_MOVE.showWalls(true) 把擋住的地方塗紅
+  function drawWalls() {
+    var map = $('town-npc-map'), cv = $('tw-walls');
+    if (!TW.wallsOn || !grid || !map) { if (cv) cv.remove(); return; }
+    if (!cv) { cv = document.createElement('canvas'); cv.id = 'tw-walls'; cv.width = GW; cv.height = GH; }
+    if (cv.parentNode !== map) map.appendChild(cv);
+    var g = cv.getContext('2d'); g.clearRect(0, 0, GW, GH); g.fillStyle = '#f00';
+    for (var i = 0; i < GW * GH; i++) if (grid.g[i]) g.fillRect(i % GW, (i / GW) | 0, 1, 1);
+  }
+  function clampPos() { TW.px = clamp(TW.px, IW * 0.01, IW * 0.99); TW.py = clamp(TW.py, IH * 0.01, IH * 0.99); }
   function enterTown(t) {
-    TW.town = t; TW.to = null; TW.npcPending = null; TW.v = 0;
+    TW.town = t; TW.to = null; TW.path = null; TW.npcPending = null; TW.v = 0;
+    buildGrid(t);
     var s = savedPos[t];
-    TW.px = (s ? s.x : 0.5) * TW.ww; TW.py = (s ? s.y : 0.82) * TW.wh; clampPos();
+    TW.px = (s ? s.x : 0.5) * IW; TW.py = (s ? s.y : 0.82) * IH; clampPos();
+    var f = nearestFree(TW.px, TW.py); TW.px = f.x; TW.py = f.y;
     TW.cx = TW.cy = null;
+  }
+  // 面向防抖：偏離目前方向中心超過 31° 才換
+  var DIR_ANG = [-135, -90, -45, 0, 45, 90, 135, 180];
+  function faceTo(dx, dy) {
+    if (!dx && !dy) return;
+    var a = Math.atan2(dy, dx) * 180 / Math.PI, cur = TW.face;
+    if (cur != null && Math.abs(((a - DIR_ANG[cur]) % 360 + 540) % 360 - 180) <= 31) return;
+    TW.face = vec2dir(dx, dy);
   }
   function savePos() {
     if (!TW.town || !TW.ww) return;
@@ -148,33 +255,55 @@
     var nm = me.querySelector('.nm'), name = '';
     try { name = (window.AFK_MP && AFK_MP.me && AFK_MP.me() && AFK_MP.me().name) || player.name || ''; } catch (e) {}
     if (nm.textContent !== name) nm.textContent = name;
-    nm.style.top = (-h * 0.86 + 6) + 'px';
+    nm.style.top = (-h * 0.86 + 6) + 'px'; nm.style.fontSize = (12 / (TW.z || 1)).toFixed(1) + 'px';
   }
-  // 移動：搖桿優先，其次點擊目標；起步加速、到點減速
+  // 移動：搖桿優先，其次點擊目標。碰撞格擋住就沿牆滑；點地面／NPC 用 A* 繞過建築。
+  // 走位平滑：實際前進方向慢慢轉向要去的方向（過轉角是弧線），面向有防抖。
+  function moveStep(ux, uy, st) {
+    var nx = TW.px + ux * st, ny = TW.py + uy * st;
+    if (freeAt(nx, ny)) { TW.px = nx; TW.py = ny; return true; }
+    if (Math.abs(ux) > 0.15 && freeAt(nx, TW.py)) { TW.px = nx; return true; }
+    if (Math.abs(uy) > 0.15 && freeAt(TW.px, ny)) { TW.py = ny; return true; }
+    return false;
+  }
+  function turn(ux, uy, dt, snap) {
+    if (TW.hx == null || snap) { TW.hx = ux; TW.hy = uy; return; }
+    var dot = TW.hx * ux + TW.hy * uy, k = Math.min(1, dt * (dot < -0.17 ? 22 : 11));
+    var hx = TW.hx + (ux - TW.hx) * k, hy = TW.hy + (uy - TW.hy) * k, l = Math.hypot(hx, hy) || 1;
+    TW.hx = hx / l; TW.hy = hy / l;
+  }
   function stepMove(dt) {
-    var tx = null, ty = null, want = SPEED, stopD = 3;
+    var ox = TW.px, oy = TW.py, moved = false;
     if (TW.joy && (TW.joy.dx || TW.joy.dy)) {
-      var jl = Math.hypot(TW.joy.dx, TW.joy.dy) || 1, k = Math.min(1, jl);
-      want = SPEED * Math.max(0.35, k);
+      var jl = Math.hypot(TW.joy.dx, TW.joy.dy) || 1, k = Math.min(1, jl), want = SPEED * Math.max(0.35, k);
+      TW.to = null; TW.path = null; TW.npcPending = null;
       TW.v = Math.min(want, TW.v + SPEED * dt / ACCEL_T);
-      var ux = TW.joy.dx / jl, uy = TW.joy.dy / jl, st = TW.v * dt, ox = TW.px, oy = TW.py;
-      TW.px += ux * st; TW.py += uy * st; clampPos();
-      TW.stride += Math.hypot(TW.px - ox, TW.py - oy);
-      TW.mdx += (ux - TW.mdx) * Math.min(1, dt * 10); TW.mdy += (uy - TW.mdy) * Math.min(1, dt * 10);
-      TW.face = vec2dir(TW.mdx, TW.mdy); TW.walking = true; TW.to = null; TW.npcPending = null;
-      return;
+      turn(TW.joy.dx / jl, TW.joy.dy / jl, dt, TW.v <= SPEED * 0.15);
+      moved = moveStep(TW.hx, TW.hy, TW.v * dt);
+    } else if (TW.to) {
+      if (!TW.path) { TW.path = pathTo(TW.px, TW.py, TW.to.x, TW.to.y); if (!TW.path) { TW.to = null; TW.walking = false; TW.v = 0; return; } }
+      while (TW.path.length > 1 && losT(TW.px, TW.py, TW.path[1].x, TW.path[1].y)) TW.path.shift();
+      var wp = TW.path[0], dx = wp.x - TW.px, dy = wp.y - TW.py, d = Math.hypot(dx, dy);
+      if (d <= 3) {
+        TW.path.shift();
+        if (!TW.path.length) { TW.to = null; TW.path = null; TW.walking = false; TW.v = 0; TW.hx = null; arrive(); return; }
+        wp = TW.path[0]; dx = wp.x - TW.px; dy = wp.y - TW.py; d = Math.hypot(dx, dy) || 1;
+      }
+      var last = TW.path.length === 1;
+      TW.v = Math.min(SPEED, TW.v + SPEED * dt / ACCEL_T);
+      turn(dx / d, dy / d, dt, TW.v <= SPEED * 0.15 || (last && d < 30));
+      moved = moveStep(TW.hx, TW.hy, Math.min(last ? d : 1e9, TW.v * dt));
+      if (!moved) { TW.stuck = (TW.stuck || 0) + dt; TW.path = null; if (TW.stuck > 0.5) { TW.stuck = 0; TW.to = null; TW.walking = false; TW.v = 0; arrive(); return; } }
+      else TW.stuck = 0;
+    } else { TW.walking = false; TW.v = 0; TW.hx = null; return; }
+    var md = Math.hypot(TW.px - ox, TW.py - oy);
+    TW.stride += md;
+    if (md > 0.01) {
+      var mx2 = (TW.px - ox) / md, my2 = (TW.py - oy) / md, tk = Math.min(1, dt * 10);
+      TW.mdx += (mx2 - TW.mdx) * tk; TW.mdy += (my2 - TW.mdy) * tk; faceTo(TW.mdx, TW.mdy);
     }
-    if (!TW.to) { TW.walking = false; TW.v = 0; return; }
-    tx = TW.to.x; ty = TW.to.y;
-    var dx = tx - TW.px, dy = ty - TW.py, d = Math.hypot(dx, dy);
-    if (d <= stopD) { TW.to = null; TW.walking = false; TW.v = 0; arrive(); return; }
-    want = SPEED;   // 等速走到點、到了就停（不滑行減速）
-    TW.v = Math.min(want, TW.v + SPEED * dt / ACCEL_T);
-    var s2 = Math.min(d, TW.v * dt), ox2 = TW.px, oy2 = TW.py;
-    TW.px += dx / d * s2; TW.py += dy / d * s2; clampPos();
-    TW.stride += Math.hypot(TW.px - ox2, TW.py - oy2);
-    TW.mdx += (dx / d - TW.mdx) * Math.min(1, dt * 10); TW.mdy += (dy / d - TW.mdy) * Math.min(1, dt * 10);
-    TW.face = vec2dir(TW.mdx, TW.mdy); TW.walking = true;
+    TW.walking = md > 0.01;
+    if (!TW.walking) TW.v = 0;
   }
   function arrive() {
     savePos();
@@ -185,10 +314,11 @@
     if (hit) { var fdx = parseFloat(hit.style.left) / 100 * TW.ww - TW.px, fdy = parseFloat(hit.style.top) / 100 * TW.wh - TW.py; TW.face = vec2dir(fdx, fdy); passClick = true; try { hit.click(); } finally { passClick = false; } }
   }
   function camera(dt) {
-    var wantCx = clamp(TW.px - TW.vw / 2, 0, Math.max(0, TW.ww - TW.vw)), wantCy = clamp(TW.py - TW.vh * 0.6, 0, Math.max(0, TW.wh - TW.vh));
+    var vwI = TW.vw / TW.z, vhI = TW.vh / TW.z;
+    var wantCx = clamp(TW.px - vwI / 2, 0, Math.max(0, IW - vwI)), wantCy = clamp(TW.py - vhI * 0.58, 0, Math.max(0, IH - vhI));
     if (TW.cx == null) { TW.cx = wantCx; TW.cy = wantCy; }
-    var k = Math.min(1, dt * 8); TW.cx += (wantCx - TW.cx) * k; TW.cy += (wantCy - TW.cy) * k;
-    var map = $('town-npc-map'); if (map) map.style.transform = 'translate(' + (-TW.cx).toFixed(1) + 'px,' + (-TW.cy).toFixed(1) + 'px)';
+    var k = Math.min(1, dt * 6); TW.cx += (wantCx - TW.cx) * k; TW.cy += (wantCy - TW.cy) * k;
+    var map = $('town-npc-map'); if (map) map.style.transform = 'translate(' + (-TW.cx * TW.z).toFixed(1) + 'px,' + (-TW.cy * TW.z).toFixed(1) + 'px) scale(' + TW.z.toFixed(4) + ')';
   }
   function townFrame(now, dt) {
     var t = inTown() ? String(mapState.current) : '';
@@ -197,6 +327,7 @@
     if (!TW.on || !$('tw-view')) { if (!mount()) return; TW.on = true; document.body.classList.add('tw-on'); TW.ww = 0; TW.wh = 0; }
     if (!layout()) return;
     if (TW.town !== t) enterTown(t);
+    else if (grid && !grid.has && window.AFK_TOWN_WALLS && AFK_TOWN_WALLS[townImg(t)]) buildGrid(t);
     stepMove(dt); camera(dt); drawMe(now);
   }
   var passClick = false;
@@ -207,10 +338,10 @@
     var el = e.target.closest && e.target.closest('#town-npc-map .town-npc'); if (!el) return;
     var x = parseFloat(el.style.left) / 100 * TW.ww, y = parseFloat(el.style.top) / 100 * TW.wh;
     if (!isFinite(x) || !isFinite(y)) return;
-    if (Math.hypot(x - TW.px, (y + 14) - TW.py) < 46) return;   // 已經在旁邊 → 直接開
+    if (Math.hypot(x - TW.px, (y + 20) - TW.py) < 80) return;   // 已經在旁邊 → 直接開
     e.stopPropagation(); e.preventDefault();
     var nm = el.querySelector('.tn-name'); TW.npcPending = nm ? nm.textContent : null;
-    TW.to = { x: x, y: Math.min(TW.wh * Y1, y + 14) };
+    TW.to = nearestFree(x, y + 20); TW.path = null;
     mark(TW.to.x, TW.to.y, $('town-npc-map'));
   }, true);
 
@@ -221,6 +352,7 @@
   function mark(x, y, host) {
     if (!host) return;
     var m = document.createElement('div'); m.className = 'mv-mark'; m.style.left = x + 'px'; m.style.top = y + 'px';
+    if (host.id === 'town-npc-map' && TW.z) { var iz = 1 / TW.z; m.style.width = (22 * iz) + 'px'; m.style.height = (10 * iz) + 'px'; m.style.margin = (-5 * iz) + 'px 0 0 ' + (-11 * iz) + 'px'; m.style.borderWidth = (2 * iz) + 'px'; }
     host.appendChild(m); setTimeout(function () { m.remove(); }, 650);
   }
   function groundTarget(e) {
@@ -232,7 +364,7 @@
     return null;
   }
   function worldPoint(kind, cx, cy) {
-    if (kind === 'town') { var r = TW.wrap.getBoundingClientRect(); return { x: cx - r.left + TW.cx, y: cy - r.top + TW.cy }; }
+    if (kind === 'town') { var r = TW.wrap.getBoundingClientRect(); return { x: (cx - r.left) / TW.z + TW.cx, y: (cy - r.top) / TW.z + TW.cy }; }
     var W = window.__afkWV, br = $('battle-view').getBoundingClientRect(); return { x: cx - br.left + W.cx, y: cy - br.top + W.cy };
   }
   function setJoy(kind, dx, dy) {
@@ -272,7 +404,7 @@
     if (p.moved || !e || e.type === 'pointercancel') return;
     // 點一下：走到那裡
     var w = worldPoint(p.kind, p.x, p.y);
-    if (p.kind === 'town') { TW.npcPending = null; TW.to = { x: clamp(w.x, TW.ww * X0, TW.ww * X1), y: clamp(w.y, TW.wh * Y0, TW.wh * Y1) }; mark(TW.to.x, TW.to.y, $('town-npc-map')); }
+    if (p.kind === 'town') { TW.npcPending = null; TW.to = nearestFree(clamp(w.x, IW * 0.01, IW * 0.99), clamp(w.y, IH * 0.01, IH * 0.99)); TW.path = null; mark(TW.to.x, TW.to.y, $('town-npc-map')); }
     else { var W = window.__afkWV; if (W) { W.manualTo = { x: w.x, y: w.y }; var bv = $('battle-view'); mark(w.x - W.cx, w.y - W.cy, bv); } }
   }
   document.addEventListener('pointerup', endPress, true);
@@ -290,7 +422,7 @@
     if (W && W.on && W.ww) return { kind: 'battle', host: $('battle-view'), px: W.px, py: W.py, ww: W.ww, wh: W.wh, cx: W.cx, cy: W.cy, walking: W.walking, sc: null, me: $('player-morph-sprite') };
     return null;
   };
-  window.AFK_MOVE = { town: TW };
+  window.AFK_MOVE = { town: TW, showWalls: function (on) { TW.wallsOn = on !== false; drawWalls(); return TW.wallsOn; }, freeAt: freeAt };
 
   // =====================================================================================
   // ⑤ 日誌時間戳（新出現的每一行加上 [時:分:秒]；afk-mp 的真人聊天用伺服器時間）
