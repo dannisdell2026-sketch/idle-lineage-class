@@ -248,7 +248,7 @@
     if (genWorker) return genWorker;
     try {
       var src = 'var genTerrain=' + genTerrain.toString() + ';\n' +
-        'self.onmessage=function(e){var d=e.data;try{var r=genTerrain(d.mapId,d.theme,d.W,d.H,d.gw,d.gh);' +
+        'self.onmessage=function(e){var d=e.data;try{var r=genTerrain(d.mapId,d.theme,d.W,d.H,d.gw,d.gh,d.layout);' +
         'self.postMessage({id:d.id,rgba:r.rgba,block:r.block},[r.rgba.buffer,r.block.buffer]);}catch(err){self.postMessage({id:d.id,err:String(err)});}};';
       var url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
       genWorker = new Worker(url);
@@ -257,40 +257,78 @@
       return genWorker;
     } catch (e) { genWorker = false; return null; }
   }
-  function runGen(mapId, theme, gw, gh, cb) {
+  function runGen(mapId, theme, gw, gh, cb, layout) {
     var w = getWorker();
     if (w) {
       var id = ++genSeq;
       genJobs[id] = function (d) {
-        if (d.err) { try { cb(genTerrain(mapId, theme, GEN_W, GEN_H, gw, gh)); } catch (e) { cb(null); } return; }
+        if (d.err) { try { cb(genTerrain(mapId, theme, GEN_W, GEN_H, gw, gh, layout)); } catch (e) { cb(null); } return; }
         cb({ rgba: new Uint8ClampedArray(d.rgba.buffer || d.rgba), block: d.block });
       };
-      w.postMessage({ id: id, mapId: mapId, theme: theme, W: GEN_W, H: GEN_H, gw: gw, gh: gh });
+      w.postMessage({ id: id, mapId: mapId, theme: theme, W: GEN_W, H: GEN_H, gw: gw, gh: gh, layout: layout || null });
       return;
     }
-    setTimeout(function () { try { cb(genTerrain(mapId, theme, GEN_W, GEN_H, gw, gh)); } catch (e) { cb(null); } }, 30);
+    setTimeout(function () { try { cb(genTerrain(mapId, theme, GEN_W, GEN_H, gw, gh, layout)); } catch (e) { cb(null); } }, 30);
   }
   function startGen(key, mapId) {
     var hit = genCache.get(mapId);
     if (hit) { applyGen(key, hit); return; }
+    loadLayout(mapId, function (LY) { genWith(key, mapId, LY); });
+  }
+  // ---- 天堂經典版地圖版面（afk-maplayouts.js）：有參考圖的地圖照原版的牆／通道／水面產生地形 ----------------
+  // 資料檔約 70KB，第一次進狩獵地圖才載入；瀏覽器不支援解壓縮（很舊的版本）就退回原本的隨機迷宮。
+  var LAYOUT_SRC = 'afk-maplayouts.js?v=413fc66d28', layoutState = 0, layoutCbs = [], layoutMap = null;
+  function unpackLayouts(done) {
+    var P = window.AFK_MAP_LAYOUTS_PACK;
+    if (!P || typeof DecompressionStream === 'undefined') { done(null); return; }
+    try {
+      var bin = atob(P.b64), u8 = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+      new Response(new Blob([u8]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer().then(function (ab) {
+        var all = new Uint8Array(ab), o = 0, n = P.w * P.h, map = {};
+        P.meta.forEach(function (m) {   // [id, k, t, bits, 位元組數]
+          var bits = m[3], len = m[4], g = new Uint8Array(n), mask = (1 << bits) - 1;
+          for (var j = 0; j < n; j++) { var bi = j * bits; g[j] = (all[o + (bi >> 3)] >> (bi & 7)) & mask; }
+          map[m[0]] = { g: g, k: m[1], t: m[2] || '', w: P.w, h: P.h };
+          o += len;
+        });
+        done(map);
+      }, function () { done(null); });
+    } catch (e) { done(null); }
+  }
+  function loadLayout(mapId, cb) {
+    var give = function () { var e = layoutMap && layoutMap[mapId]; cb(e && e.w === GW_GEN && e.h === Math.round(GW_GEN * 9 / 16) ? e : null); };
+    if (layoutState === 2) { give(); return; }
+    layoutCbs.push(give);
+    if (layoutState === 1) return;
+    layoutState = 1;
+    var fin = function (map) { if (layoutState === 2) return; layoutMap = map; layoutState = 2; var q = layoutCbs; layoutCbs = []; q.forEach(function (f) { try { f(); } catch (e) {} }); };
+    setTimeout(function () { fin(layoutMap); }, 8000);   // 載不到就算了，用隨機迷宮
+    if (window.AFK_MAP_LAYOUTS_PACK) { unpackLayouts(fin); return; }
+    var s = document.createElement('script'); s.src = LAYOUT_SRC; s.async = true;
+    s.onload = function () { unpackLayouts(fin); }; s.onerror = function () { fin(null); };
+    (document.head || document.documentElement).appendChild(s);
+  }
+  function genWith(key, mapId, LY) {
     var gw = GW_GEN, gh = Math.round(GW_GEN * 9 / 16);
-    runGen(mapId, mapTheme(mapId), gw, gh, function (r) {
+    var theme = (LY && LY.t) || mapTheme(mapId), deco = theme === 'forest' ? 'field' : theme;
+    runGen(mapId, theme, gw, gh, function (r) {
       if (!r) { try { console.warn('[afk-walkview] 地形產生失敗，改用原本地圖'); } catch (e2) {} return; }
       try {
         var src = document.createElement('canvas'); src.width = GEN_W; src.height = GEN_H;
         src.getContext('2d').putImageData(new ImageData(r.rgba, GEN_W, GEN_H), 0, 0);
         var cv = document.createElement('canvas'); cv.width = OUT_W; cv.height = OUT_H;
         var g2 = cv.getContext('2d'); g2.imageSmoothingEnabled = true; g2.imageSmoothingQuality = 'high'; g2.drawImage(src, 0, 0, OUT_W, OUT_H);
-        try { decorateGround(g2, OUT_W, OUT_H, r.block, gw, gh, mapTheme(mapId), String(mapId)); } catch (eD) { try { console.warn('[afk-walkview] 地面細節失敗', eD); } catch (e3) {} }
+        try { decorateGround(g2, OUT_W, OUT_H, r.block, gw, gh, deco, String(mapId)); } catch (eD) { try { console.warn('[afk-walkview] 地面細節失敗', eD); } catch (e3) {} }
         cv.toBlob(function (blob) {
           if (!blob) return;
-          var ent = { url: URL.createObjectURL(blob), grid: gridFromBlock(r.block, gw, gh, 1) };
+          var ent = { url: URL.createObjectURL(blob), grid: gridFromBlock(r.block, gw, gh, LY ? 0 : 1) };
           genCache.set(mapId, ent);
           if (genCache.size > 6) { var first = genCache.keys().next().value; try { URL.revokeObjectURL(genCache.get(first).url); } catch (e) {} genCache.delete(first); }
           if (wv.key === key) applyGen(key, ent);
         }, 'image/jpeg', 0.9);
       } catch (e) { try { console.warn('[afk-walkview] 地形貼圖失敗', e); } catch (e2) {} }
-    });
+    }, LY ? { g: LY.g } : null);
   }
   function applyGen(key, ent) {
     if (wv.key !== key) return;
@@ -522,7 +560,7 @@
   // 2) 散布小障礙物：野外＝樹叢／灌木／石頭，洞穴＝石筍／岩塊／水晶，沙漠＝砂岩／枯灌木，雪原＝雪松／雪石
   // 3) 地面細節：草叢、小花、碎石、裂縫、水窪、沙紋……（只是貼圖，不擋路）
   // 岩脊距離場先在半解析度格點算好再雙線性內插（最貴的雜訊只算 1/4 次）。整支函式不碰 DOM，可丟進 Worker 跑。
-  function genTerrain(seedStr, theme, W, H, gw, gh) {
+  function genTerrain(seedStr, theme, W, H, gw, gh, layout) {
     var i, j, x, y, p;
     var seed = 2166136261; for (i = 0; i < seedStr.length; i++) { seed ^= seedStr.charCodeAt(i); seed = Math.imul(seed, 16777619) >>> 0; }
     var rnd = function () { seed = (seed + 0x6D2B79F5) >>> 0; var t = seed; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; };
@@ -539,6 +577,31 @@
     };
     var fbm = function (x, y, o) { var s = 0, a = 0.5, f = 1, n = 0; for (var k = 0; k < o; k++) { s += a * noise(x * f, y * f); n += a; a *= 0.5; f *= 2.03; } return s / n; };
     var open = theme !== 'cave';
+    // 參考版面（0 可走、1 牆／樹林、2 水）→ 有號距離場（格為單位，>0 可走、<0 牆內），牆邊加一點雜訊讓輪廓自然
+    var LG = (layout && layout.g && layout.g.length === gw * gh) ? layout.g : null, SD = null;
+    if (LG) {
+      var dA = new Float32Array(gw * gh), dB = new Float32Array(gw * gh), INF = 1e6;
+      for (i = 0; i < gw * gh; i++) { dA[i] = LG[i] ? 0 : INF; dB[i] = LG[i] ? INF : 0; }
+      var cham = function (Dd) {
+        var xx, yy, q, v;
+        for (yy = 0; yy < gh; yy++) for (xx = 0; xx < gw; xx++) { q = yy * gw + xx; v = Dd[q];
+          if (xx > 0) v = Math.min(v, Dd[q - 1] + 1);
+          if (yy > 0) { v = Math.min(v, Dd[q - gw] + 1); if (xx > 0) v = Math.min(v, Dd[q - gw - 1] + 1.414); if (xx < gw - 1) v = Math.min(v, Dd[q - gw + 1] + 1.414); }
+          Dd[q] = v; }
+        for (yy = gh - 1; yy >= 0; yy--) for (xx = gw - 1; xx >= 0; xx--) { q = yy * gw + xx; v = Dd[q];
+          if (xx < gw - 1) v = Math.min(v, Dd[q + 1] + 1);
+          if (yy < gh - 1) { v = Math.min(v, Dd[q + gw] + 1); if (xx < gw - 1) v = Math.min(v, Dd[q + gw + 1] + 1.414); if (xx > 0) v = Math.min(v, Dd[q + gw - 1] + 1.414); }
+          Dd[q] = v; }
+      };
+      cham(dA); cham(dB);
+      SD = new Float32Array(gw * gh);
+      for (i = 0; i < gw * gh; i++) SD[i] = LG[i] ? -(dB[i] - 0.5) : (dA[i] - 0.5);
+    }
+    var sdAt = function (gx, gy) {
+      var fx = Math.max(0, Math.min(gw - 1.001, gx - 0.5)), fy = Math.max(0, Math.min(gh - 1.001, gy - 0.5)), x0 = fx | 0, y0 = fy | 0, ax = fx - x0, ay = fy - y0, q = y0 * gw + x0;
+      return (SD[q] * (1 - ax) + SD[q + 1] * ax) * (1 - ay) + (SD[q + gw] * (1 - ax) + SD[q + gw + 1] * ax) * ay;
+    };
+    var waterAt = function (gx, gy) { var cx = Math.min(gw - 1, Math.max(0, gx | 0)), cy = Math.min(gh - 1, Math.max(0, gy | 0)); return LG[cy * gw + cx] === 2; };
 
     // ---- 迷宮
     var N = 18, span = (gh + gw / 1.8) + 12, S = Math.ceil(span / N) + 1;
@@ -577,6 +640,10 @@
       var jy = (fbm(gx * 0.055 + 40, gy * 0.055 + 40, 3) - 0.5) * 9 + (noise(gx * 0.33, gy * 0.33 + 50) - 0.5) * 1.8;
       var uv = toUV(gx + jx, gy + jy); return wallDist(uv[0], uv[1]) + (fbm(gx * 0.2, gy * 0.2, 2) - 0.5) * 2.2;
     };
+    if (SD) distAt = function (gx, gy) {
+      var jx = (noise(gx * 0.35 + 50, gy * 0.35) - 0.5) * 0.9, jy = (noise(gx * 0.35, gy * 0.35 + 50) - 0.5) * 0.9;
+      return sdAt(gx + jx, gy + jy) + (fbm(gx * 0.4, gy * 0.4, 2) - 0.5) * 0.7;
+    };
     // 半解析度距離格點
     var LW = (W >> 1) + 2, LH = (H >> 1) + 2, L = new Float32Array(LW * LH), kx = gw / W, ky = gh / H;
     for (y = 0; y < LH; y++) for (x = 0; x < LW; x++) L[y * LW + x] = distAt(x * 2 * kx, y * 2 * ky);
@@ -587,16 +654,16 @@
       return (L[q] * (1 - ax) + L[q + 1] * ax) * (1 - ay) + (L[q + LW] * (1 - ax) + L[q + LW + 1] * ax) * ay;
     };
     var M = new Uint8Array(W * H), D = new Float32Array(W * H);
-    for (y = 0; y < H; y++) for (x = 0; x < W; x++) { var dv = Ld(x, y); p = y * W + x; if (dv < 0) { M[p] = 1; D[p] = Math.min(1, -dv * 0.4); } }
+    for (y = 0; y < H; y++) for (x = 0; x < W; x++) { var dv = Ld(x, y); p = y * W + x; if (dv < 0) { M[p] = (SD && waterAt(x * kx, y * ky)) ? 2 : 1; D[p] = Math.min(1, -dv * 0.4); } }
     var FH = Math.round(H * 0.022);
     var face = new Uint8Array(W * H);
-    for (x = 0; x < W; x++) { var run = 999; for (y = 0; y < H; y++) { p = y * W + x; if (M[p]) run = 0; else { run++; if (run <= FH) face[p] = run; } } }
+    for (x = 0; x < W; x++) { var run = 999; for (y = 0; y < H; y++) { p = y * W + x; if (M[p] === 1) run = 0; else if (M[p] === 2) run = 999; else { run++; if (run <= FH) face[p] = run; } } }
 
     // ---- 散布障礙物（只放在離岩壁夠遠的空地上）
     // 類型：1 樹冠 2 灌木 3 石頭 4 水晶 5 雪松
     var OBJ = new Float32Array(W * H), OBT = new Uint8Array(W * H), cpx = W / gw;
     var kinds = { field: [1, 1, 2, 2, 3], cave: [3, 3, 3, 4], sand: [3, 3, 2], snow: [5, 5, 3, 2] }[theme] || [1, 2, 3];
-    var want = open ? 260 : 180, placed = 0, pts = [];
+    var want = SD ? (open ? 110 : 50) : (open ? 260 : 180), placed = 0, pts = [];
     for (var tries = 0; tries < want * 6 && placed < want; tries++) {
       var gx0 = 3 + rnd() * (gw - 6), gy0 = 4 + rnd() * (gh - 7);
       var kind = kinds[(rnd() * kinds.length) | 0];
@@ -621,6 +688,7 @@
     var PAL = {
       field: { floor: [92, 112, 58], floor2: [120, 110, 70], top: [96, 92, 78], top2: [140, 134, 112], face: [58, 52, 42], shade: 0.55 },
       cave: { floor: [112, 92, 68], floor2: [92, 76, 58], top: [92, 78, 62], top2: [150, 128, 100], face: [52, 42, 33], shade: 0.5 },
+      forest: { floor: [118, 112, 66], floor2: [150, 128, 86], top: [34, 62, 28], top2: [72, 108, 46], face: [30, 42, 24], shade: 0.55 },
       sand: { floor: [178, 150, 102], floor2: [158, 128, 84], top: [140, 112, 76], top2: [196, 166, 118], face: [92, 70, 46], shade: 0.6 },
       snow: { floor: [208, 214, 222], floor2: [176, 186, 198], top: [120, 124, 132], top2: [196, 200, 210], face: [70, 74, 84], shade: 0.68 }
     }[theme] || { floor: [92, 112, 58], floor2: [120, 110, 70], top: [96, 92, 78], top2: [140, 134, 112], face: [58, 52, 42], shade: 0.55 };
@@ -628,10 +696,16 @@
     for (y = 0; y < H; y++) for (x = 0; x < W; x++) {
       p = y * W + x; var gx = x * kx, gy = y * ky, r0, g0, b0;
       var n1 = fbm(gx * 0.3, gy * 0.3, 3), n2 = noise(x * 0.21, y * 0.21);
-      if (M[p]) {   // 岩頂
+      if (M[p] === 2) {   // 水面
+        var wv1 = noise(x * 0.05 + 3, y * 0.11), wv2 = noise(x * 0.3, y * 0.6 + 9), sh2 = Math.min(1, Math.max(0, -Ld(x, y)) * 0.25);
+        r0 = (34 + 26 * wv1) * (0.85 + 0.15 * sh2); g0 = (78 + 34 * wv1) * (0.9 + 0.1 * sh2); b0 = (128 + 40 * wv1) * (0.95 + 0.1 * sh2);
+        if (wv2 > 0.88) { r0 += 40; g0 += 46; b0 += 50; }
+        if (sh2 < 0.15) { r0 = r0 * 0.6 + 150 * 0.4; g0 = g0 * 0.6 + 170 * 0.4; b0 = b0 * 0.6 + 175 * 0.4; }   // 岸邊淺水
+      } else if (M[p]) {   // 岩頂
         var lit = !M[Math.max(0, p - W * 3 - 3)] ? 1.3 : (!M[Math.min(W * H - 1, p + W * 3 + 3)] ? 0.75 : 1);
         var rg = 1 - Math.abs(2 * fbm(gx * 0.42 + 9, gy * 0.42 + 9, 2) - 1);
         var kk = (0.5 + 0.55 * Math.pow(D[p], 0.6)) * (0.75 + 0.5 * n1) * lit * (rg > 0.95 ? 0.7 : 1) * (0.94 + 0.12 * n2), tt = n1;
+        if (theme === 'forest') { var lf = noise(x * 0.24, y * 0.24), lf2 = noise(x * 0.07 + 5, y * 0.07); kk = (0.55 + 0.6 * lf) * lit * (0.8 + 0.4 * lf2); tt = lf2; if (lf > 0.82) kk *= 1.25; }   // 樹冠：一叢一叢的葉子
         r0 = (PAL.top[0] * (1 - tt) + PAL.top2[0] * tt) * kk; g0 = (PAL.top[1] * (1 - tt) + PAL.top2[1] * tt) * kk; b0 = (PAL.top[2] * (1 - tt) + PAL.top2[2] * tt) * kk;
       } else if (OBT[p]) {   // 障礙物：上緣受光、下緣背光
         var hh = OBJ[p], kd = OBT[p];
@@ -668,7 +742,7 @@
         var crk = 1 - Math.abs(2 * fbm(gx * 0.16 + 77, gy * 0.16 + 77, 2) - 1); if (crk > 0.988 && n1 > 0.5) { r0 *= 0.8; g0 *= 0.8; b0 *= 0.8; }   // 裂縫
         // 陰影：光從左上來
         var sx = x - SH, sy = y - SH;
-        if (sx >= 0 && sy >= 0 && M[sy * W + sx]) { r0 *= PAL.shade + 0.2; g0 *= PAL.shade + 0.2; b0 *= PAL.shade + 0.2; }
+        if (sx >= 0 && sy >= 0 && M[sy * W + sx] === 1) { r0 *= PAL.shade + 0.2; g0 *= PAL.shade + 0.2; b0 *= PAL.shade + 0.2; }
         else if (sx >= 0 && sy >= 0 && face[sy * W + sx]) { r0 *= 0.8; g0 *= 0.8; b0 *= 0.8; }
         else if (x >= SO && y >= SO && OBJ[(y - SO) * W + x - SO] > 0.05) { r0 *= 0.62; g0 *= 0.62; b0 *= 0.62; }
       }
@@ -681,7 +755,7 @@
       for (y = Math.floor(cy2 * ch); y < Math.floor((cy2 + 1) * ch); y += 2) for (x = Math.floor(cx2 * cw); x < Math.floor((cx2 + 1) * cw); x += 2) {
         p = y * W + x; tot++; if (M[p] || (face[p] && face[p] <= FH * 0.5)) cnt++; if (OBJ[p] > 0.08) oc++;
       }
-      block[cy2 * gw + cx2] = (cnt / tot > 0.3 || oc / tot > 0.3) ? 1 : 0;
+      block[cy2 * gw + cx2] = LG ? ((LG[cy2 * gw + cx2] || oc / tot > 0.3) ? 1 : 0) : ((cnt / tot > 0.3 || oc / tot > 0.3) ? 1 : 0);
     }
     return { rgba: out, block: block };
   }
