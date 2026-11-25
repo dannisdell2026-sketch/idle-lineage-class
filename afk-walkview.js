@@ -95,16 +95,30 @@
   var GEN_WORLD_H = 2100;                 // 產生地形時的世界高度（px，再乘鏡頭縮放）：跟螢幕大小無關，手機桌機一樣大，30 隻怪才散得開
   var GEN_W = 2048, GEN_H = 1152;         // 地形在背景執行緒產生的解析度（每張地圖只做一次）
   var OUT_W = 2560, OUT_H = 1440;         // 最後貼圖解析度：放大後再畫上草叢／石子等細節 → 鏡頭 0.7 時約 1:1，細節清楚
-  var MOB_SCALE = 1.35;                   // 怪物比角色再放大幾倍（地圖變大後怪太小看不清楚）
+  var MOB_SCALE = 1.9;                    // 怪物比角色再放大幾倍（1.35 → 再大 40%）
   var STRIDE = 17;                        // 走一步（換一幀走路圖）要走多少世界 px：腳步跟實際移動距離同步，不會原地滑步
   var GW_GEN = 228;                       // 產生地形的碰撞格欄數（228×128≈2.9 萬格，舊版 72×41 的 10 倍）
 
   var wv = { on: false, px: null, py: null, ww: 0, wh: 0, vw: 0, vh: 0, cx: 0, cy: 0, mobs: new Map(),
              walking: false, face: 5, wanderT: 0, wanderTo: null, lastT: 0, bgUrl: '', imgW: 1920, imgH: 1080,
-             cam: 0.7, tgtUid: null, grid: null, pa: null, inRange: false, rangeUid: null, manualUid: null, retgtT: 0 };
+             cam: 0.9, tgtUid: null, grid: null, pa: null, inRange: false, rangeUid: null, manualUid: null, retgtT: 0 };
   // 鏡頭縮放（afk-pipiskin 小地圖的 +／− 會改這個值）：0.6＝拉最遠看更大範圍，1.3＝拉近；預設 0.7＝角色小、視野廣
-  try { var _c = parseFloat(localStorage.getItem('afk-wv-cam')); if (_c >= 0.6 && _c <= 1.3) wv.cam = _c; } catch (e) {}
-  wv.setCam = function (c) { wv.cam = Math.max(0.6, Math.min(1.3, Math.round(c * 10) / 10)); try { localStorage.setItem('afk-wv-cam', String(wv.cam)); } catch (e) {} return wv.cam; };
+  // v2：預設拉近到 0.9（舊的 afk-wv-cam 存的是 0.7 → 換新鍵，大家都套用新的預設）
+  try { var _c = parseFloat(localStorage.getItem('afk-wv-cam2')); if (_c >= 0.6 && _c <= 1.5) wv.cam = _c; } catch (e) {}
+  wv.setCam = function (c) { wv.cam = Math.max(0.6, Math.min(1.5, Math.round(c * 10) / 10)); try { localStorage.setItem('afk-wv-cam2', String(wv.cam)); } catch (e) {} return wv.cam; };
+  // 世界座標會跟著鏡頭縮放變大 → 速度、距離、步幅一起乘 K()，拉近／拉遠時走路節奏和打怪距離都不變（原本的數值是在鏡頭 0.7 調的）
+  function K() { return wv.cam / 0.7; }
+  function mobReach() { return MOB_REACH * K() * 1.2; }   // 怪物變大 → 停在離玩家遠一點的地方，不會疊在一起
+  // 面向防抖：方向要偏離目前方向的中心超過 31°（45° 一格的一半再多 8.5°）才換 → 斜著走時不會在兩個方向間一直閃
+  var DIR_ANG = [-135, -90, -45, 0, 45, 90, 135, 180];
+  function hystDir(o, dx, dy, key) {
+    key = key || '_fd';
+    if (!dx && !dy) return o[key] != null ? o[key] : 5;
+    var a = Math.atan2(dy, dx) * 180 / Math.PI, cur = o[key];
+    if (cur != null) { var df = Math.abs(((a - DIR_ANG[cur]) % 360 + 540) % 360 - 180); if (df <= 31) return cur; }
+    var d = 5; try { d = _vec2dir(dx, dy); } catch (e) {}
+    o[key] = d; return d;
+  }
   window.__afkWV = wv;   // 唯讀分享給 afk-pipiskin（小地圖、經驗飄字位置）；那支關掉不影響本檔
 
   function $(id) { return document.getElementById(id); }
@@ -771,7 +785,7 @@
   // 新怪出生點：整張地圖隨機，但離玩家至少半個畫面（不會在眼前憑空冒出來），
   // 並從幾個候選點裡挑「離其他怪最遠」的那個 → 怪物平均散在地圖各處，不會擠成一團。
   function spawnSpot() {
-    if (!wv.grid) return randomWalkable(wv.px, wv.py, SPAWN_MIN, SPAWN_MAX);
+    if (!wv.grid) return randomWalkable(wv.px, wv.py, SPAWN_MIN * K(), SPAWN_MAX * K());
     var minD = Math.max(180, Math.min(wv.vw * 0.55, wv.ww * 0.3)), best = null, bestScore = -1;
     for (var k = 0; k < 8; k++) {
       var c = null;
@@ -780,7 +794,7 @@
       var near = 1e9; wv.mobs.forEach(function (p) { var d = Math.hypot(p.hx - c.x, p.hy - c.y); if (d < near) near = d; });
       if (near > bestScore) { bestScore = near; best = c; }
     }
-    return best || anyWalkable() || randomWalkable(wv.px, wv.py, SPAWN_MIN, SPAWN_MAX);
+    return best || anyWalkable() || randomWalkable(wv.px, wv.py, SPAWN_MIN * K(), SPAWN_MAX * K());
   }
   // A* 尋路（8 方向、不切牆角），回傳世界座標的路徑點；找不到回 null。
   // 格子 2.9 萬格：陣列重複使用（以「第幾次搜尋」當標記，不必每次清空），每幀最多算 PATH_BUDGET 次，其餘下一幀再算。
@@ -833,7 +847,7 @@
   // 擬真：起步加速（ACCEL_T 秒到全速）、快到時減速；每一步都檢查碰撞格，撞牆就沿牆滑，滑不動才停。
   function steer(a, gx, gy, speed, stop, dt) {
     var dx = gx - a.x, dy = gy - a.y, dist = Math.hypot(dx, dy);
-    if (dist <= stop) { a.path = null; a.v = 0; return false; }
+    if (dist <= stop) { a.path = null; a.v = 0; a.hx = null; return false; }
     var tx = gx, ty = gy, direct = los(a.x, a.y, gx, gy);
     if (!direct) {
       a.rt = (a.rt || 0) - dt;
@@ -851,7 +865,17 @@
     if (direct) want = Math.min(want, Math.max(speed * 0.3, (dist - stop) * 5));   // 快到了就放慢
     a.v = Math.min(want, (a.v || 0) + speed * dt / ACCEL_T);
     var step = Math.min(direct ? dist - stop : dd, a.v * dt);
-    var nx = a.x + ddx / dd * step, ny = a.y + ddy / dd * step;
+    // 走位平滑：實際前進方向（a.hx,a.hy）慢慢轉向要去的方向 → 過路口／繞障礙是畫弧線，不是折線急轉；
+    // 大轉彎（>100°）轉快一點、離目標很近時直接對準，避免繞圈
+    var ux = ddx / dd, uy = ddy / dd;
+    if (a.hx == null || a.v <= speed * 0.12) { a.hx = ux; a.hy = uy; }
+    else {
+      var dotp = a.hx * ux + a.hy * uy, tr = Math.min(1, dt * (dotp < -0.17 ? 22 : 9));
+      if (Math.hypot(gx - a.x, gy - a.y) < 26 * K()) tr = 1;
+      var hx = a.hx + (ux - a.hx) * tr, hy = a.hy + (uy - a.hy) * tr, hl = Math.hypot(hx, hy) || 1;
+      a.hx = hx / hl; a.hy = hy / hl;
+    }
+    var nx = a.x + a.hx * step, ny = a.y + a.hy * step;
     var ox0 = a.x, oy0 = a.y;
     if (walkW(nx, ny)) { a.x = nx; a.y = ny; }
     else if (walkW(nx, a.y)) a.x = nx;
@@ -860,8 +884,8 @@
     a.stride = (a.stride || 0) + Math.hypot(a.x - ox0, a.y - oy0);   // 累計走了多遠 → 腳步動畫照距離播，不會滑步
     // 面向慢慢轉過去（不會一幀就 180 度大迴轉）
     var tw = Math.min(1, dt * 10);
-    a.mdx = (a.mdx == null ? ddx / dd : a.mdx + (ddx / dd - a.mdx) * tw);
-    a.mdy = (a.mdy == null ? ddy / dd : a.mdy + (ddy / dd - a.mdy) * tw);
+    a.mdx = (a.mdx == null ? a.hx : a.mdx + (a.hx - a.mdx) * tw);
+    a.mdy = (a.mdy == null ? a.hy : a.mdy + (a.hy - a.mdy) * tw);
     return true;
   }
   // 站在障礙裡（地形剛換、鏡頭縮放後）→ 搬到最近可走的地方
@@ -879,7 +903,7 @@
   function mobPos(uid) {
     var p = wv.mobs.get(uid);
     if (!p) {
-      var c = (bigMap() ? spawnSpot() : randomWalkable(wv.px, wv.py, SPAWN_MIN, SPAWN_MAX)) || { x: clamp(wv.px + 160, 50, wv.ww - 50), y: wv.py };
+      var c = (bigMap() ? spawnSpot() : randomWalkable(wv.px, wv.py, SPAWN_MIN * K(), SPAWN_MAX * K())) || { x: clamp(wv.px + 160 * K(), 50, wv.ww - 50), y: wv.py };
       p = { x: c.x, y: c.y, hx: c.x, hy: c.y, path: null, rt: 0, wt: Math.random() * 3, wx: null, wy: null, v: 0, aggro: 0, inReach: false };
       wv.mobs.set(uid, p);
     }
@@ -896,43 +920,44 @@
       var uid = String(m.uid), p = mobPos(uid); list.push(p);
       p.moving = false;
       var d = Math.hypot(p.x - wv.px, p.y - wv.py);
-      p.inReach = !dead && d <= MOB_REACH + 16;
+      p.inReach = !dead && d <= mobReach() + 16 * K();
       if (m.noAttack) { p.inReach = false; return; }   // 城門／守護塔／寶箱：不會動
       var passiveFull = m.beh === '被動' && m.curHp >= m.hp;
-      var see = d < AGGRO_R && los(p.x, p.y, wv.px, wv.py);
-      if (!dead && (uid === lockUid || recentAct(m, now) || (!passiveFull && see) || (m.curHp < m.hp && d < AGGRO_R * 1.6))) p.aggro = 4;
+      var see = d < AGGRO_R * K() && los(p.x, p.y, wv.px, wv.py);
+      if (!dead && (uid === lockUid || recentAct(m, now) || (!passiveFull && see) || (m.curHp < m.hp && d < AGGRO_R * K() * 1.6))) p.aggro = 4;
       else p.aggro = Math.max(0, p.aggro - dt);
-      if (p.aggro > 0 && uid !== lockUid && Math.hypot(p.x - p.hx, p.y - p.hy) > LEASH_R) p.aggro = 0;
+      if (p.aggro > 0 && uid !== lockUid && Math.hypot(p.x - p.hx, p.y - p.hy) > LEASH_R * K()) p.aggro = 0;
       if (p.aggro > 0) {
         p.wx = null;
-        p.moving = steer(p, wv.px, wv.py, MOB_CHASE, MOB_REACH, dt);
+        p.moving = steer(p, wv.px, wv.py, MOB_CHASE * K(), mobReach(), dt);
         return;
       }
       p.wt -= dt;
       if (p.wt <= 0) {
         p.wt = 2.5 + Math.random() * 3.5;
-        var far = Math.hypot(p.x - p.hx, p.y - p.hy) > 140;
-        var c = far ? { x: p.hx, y: p.hy } : (Math.random() < 0.55 ? randomWalkable(p.hx, p.hy, 20, 110) : null);
+        var far = Math.hypot(p.x - p.hx, p.y - p.hy) > 140 * K();
+        var c = far ? { x: p.hx, y: p.hy } : (Math.random() < 0.55 ? randomWalkable(p.hx, p.hy, 20 * K(), 110 * K()) : null);
         p.wx = c ? c.x : null; p.wy = c ? c.y : null; p.path = null;
       }
-      if (p.wx != null) { p.moving = steer(p, p.wx, p.wy, MOB_WANDER, 3, dt); if (!p.moving) p.wx = null; }
+      if (p.wx != null) { p.moving = steer(p, p.wx, p.wy, MOB_WANDER * K(), 3, dt); if (!p.moving) p.wx = null; }
       else p.v = 0;
     });
-    // 互相推開（推過去那格必須可走），也不准疊在玩家身上
+    // 互相推開（推過去那格必須可走），也不准疊在玩家身上；推力照時間算（不同幀率一樣柔和，不會抖）
+    var GAP = MOB_GAP * K() * 1.25, pk = Math.min(0.5, dt * 6);
     for (var i = 0; i < list.length; i++) {
       var a = list[i];
       for (var j = i + 1; j < list.length; j++) {
         var b = list[j], dx = b.x - a.x, dy = b.y - a.y;
-        if (dx > MOB_GAP || dx < -MOB_GAP || dy > MOB_GAP || dy < -MOB_GAP) continue;
+        if (dx > GAP || dx < -GAP || dy > GAP || dy < -GAP) continue;
         var d2 = Math.hypot(dx, dy);
-        if (d2 > 0.01 && d2 < MOB_GAP) {
-          var push = (MOB_GAP - d2) * 0.25, ux = dx / d2 * push, uy = dy / d2 * push;
+        if (d2 > 0.01 && d2 < GAP) {
+          var push = (GAP - d2) * pk, ux = dx / d2 * push, uy = dy / d2 * push;
           if (walkW(a.x - ux, a.y - uy)) { a.x -= ux; a.y -= uy; }
           if (walkW(b.x + ux, b.y + uy)) { b.x += ux; b.y += uy; }
         }
       }
-      var px = a.x - wv.px, py = a.y - wv.py, pd = Math.hypot(px, py), minP = MOB_REACH * 0.7;
-      if (pd > 0.01 && pd < minP) { var k2 = (minP - pd) / pd; if (walkW(a.x + px * k2, a.y + py * k2)) { a.x += px * k2; a.y += py * k2; } }
+      var px = a.x - wv.px, py = a.y - wv.py, pd = Math.hypot(px, py), minP = mobReach() * 0.7;
+      if (pd > 0.01 && pd < minP) { var k2 = (minP - pd) / pd * Math.min(1, dt * 8); if (walkW(a.x + px * k2, a.y + py * k2)) { a.x += px * k2; a.y += py * k2; } }
     }
   }
   function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
@@ -1069,27 +1094,27 @@
     // 角色：走向目標，進到射程（近戰貼身／遠程射程內且看得到）才算 inRange → 核心才讓玩家出手
     var pa = wv.pa || (wv.pa = {}); pa.x = wv.px; pa.y = wv.py;
     wv.walking = false; wv.inRange = false; wv.rangeUid = lockUid;
-    var spd = WALK_SPEED * moveMult();
+    var spd = WALK_SPEED * K() * moveMult();
     if (!dead) {
       if (tgt) {
-        var tp = mobPos(lockUid), ranged = isRanged(), stop = ranged ? RANGED_STOP : MELEE_STOP;
+        var tp = mobPos(lockUid), ranged = isRanged(), stop = (ranged ? RANGED_STOP : MELEE_STOP * 1.15) * K();
         var see = los(wv.px, wv.py, tp.x, tp.y);
-        if (ranged && !see) stop = MELEE_STOP;
+        if (ranged && !see) stop = MELEE_STOP * 1.15 * K();
         wv.wanderTo = null;
         var mmv = manualStep(pa, spd, dt);   // 玩家點地面／搖桿 → 優先照玩家操作走，暫停追怪
         wv.walking = mmv !== null ? mmv : steer(pa, tp.x, tp.y + 4, spd, stop, dt);
         var dNow = Math.hypot(pa.x - tp.x, pa.y - tp.y - 4);
-        wv.inRange = dNow <= stop + 12 && (see || dNow <= MELEE_STOP + 12);
+        wv.inRange = dNow <= stop + 12 * K() && (see || dNow <= (MELEE_STOP * 1.15 + 12) * K());
       } else if ((wv.walking = manualStep(pa, spd, dt)) !== null) {
         wv.walking = !!wv.walking;
       } else {
         wv.walking = false;
         wv.wanderT -= dt;
-        if (wv.wanderT <= 0) { wv.wanderT = 2 + Math.random() * 3; wv.wanderTo = Math.random() < 0.6 ? randomWalkable(wv.px, wv.py, 40, 160) : null; }
+        if (wv.wanderT <= 0) { wv.wanderT = 2 + Math.random() * 3; wv.wanderTo = Math.random() < 0.6 ? randomWalkable(wv.px, wv.py, 40 * K(), 160 * K()) : null; }
         if (wv.wanderTo) { wv.walking = steer(pa, wv.wanderTo.x, wv.wanderTo.y, spd * 0.45, 4, dt); if (!wv.walking) wv.wanderTo = null; }
       }
     }
-    if (wv.walking) { wv.px = pa.x; wv.py = pa.y; try { wv.face = _vec2dir(pa.mdx, pa.mdy); } catch (e) {} }
+    if (wv.walking) { wv.px = pa.x; wv.py = pa.y; wv.face = hystDir(pa, pa.mdx, pa.mdy); }
     moveMobs(alive, lockUid, dt, dead);
 
     // 鏡頭：角色置中、不超出世界邊；稍微延遲跟上（比較像攝影機在跟）
@@ -1122,13 +1147,15 @@
           if (age < 320) { var lx = wv.px - p.x, ly = wv.py - p.y, ll = Math.hypot(lx, ly) || 1, lk2 = Math.sin(Math.PI * age / 320) * 10; ox = lx / ll * lk2; oy = ly / ll * lk2; }
         }
         // 擬真步態：起伏跟「實際走過的距離」同步（加速中步伐慢、全速時快、停下就停），左右小幅晃身
-        var gk = p.moving ? Math.min(1, (p.v || 0) / MOB_CHASE + 0.35) : 0, ph = (p.stride || 0) / STRIDE * Math.PI;
-        p.gk = (p.gk || 0) + (gk - (p.gk || 0)) * 0.2;   // 起步／停下平滑過渡
-        if (p.gk > 0.02) { oy += -Math.abs(Math.sin(ph)) * 3.2 * p.gk; }
-        var rot = (p.gk > 0.02 ? Math.sin(ph) * 3.5 * p.gk : 0).toFixed(1) + 'deg';
+        // 有走路圖的怪（八方向怪等）→ 移動時播真正的走路幀（照走過的距離換幀、面向前進方向），不再用假晃動
+        var walked = !!(mb && p.moving && !p.inReach && mobWalkFrame(cards[i], mb, p));
+        var gk = (p.moving && !walked) ? Math.min(1, (p.v || 0) / (MOB_CHASE * K()) + 0.35) : 0, ph = (p.stride || 0) / (STRIDE * K()) * Math.PI;
+        p.gk = (p.gk || 0) + (gk - (p.gk || 0)) * Math.min(1, dt * 10);   // 起步／停下平滑過渡
+        if (p.gk > 0.02) { oy += -Math.abs(Math.sin(ph)) * 2.4 * p.gk; }
+        var rot = (p.gk > 0.02 ? Math.sin(ph) * 1.8 * p.gk : 0).toFixed(1) + 'deg';
         if (cards[i].style.getPropertyValue('--wv-rot') !== rot) cards[i].style.setProperty('--wv-rot', rot);
         // 單方向怪：走路時面向前進方向，站著打時面向玩家（原圖預設朝左）
-        if (mb && !is8Dir(mb)) {
+        if (mb && !is8Dir(mb) && !walked) {
           var fdx = (p.moving && Math.abs(p.mdx || 0) > 0.25 && !p.inReach) ? p.mdx : (wv.px - p.x);
           if (Math.abs(fdx) > 6 || p.moving) { var fx = fdx > 0 ? '-1' : '1'; if (cards[i].style.getPropertyValue('--wv-fx') !== fx) cards[i].style.setProperty('--wv-fx', fx); }
         }
@@ -1148,10 +1175,63 @@
         if (_pmState && (_pmState.act === 'attack' || _pmState.act === 'skill') && tgt) {
           var ag = now - (_pmState.t || 0);
           if (ag < 300) { var tq = mobPos(lockUid), qx = tq.x - wv.px, qy = tq.y - wv.py, ql = Math.hypot(qx, qy) || 1, qk = Math.sin(Math.PI * ag / 300) * (isRanged() ? 3 : 9); px2 = qx / ql * qk; py2 = qy / ql * qk; }
-        } else if (wv.walking && !wv.hasWalkFrames) py2 = -Math.abs(Math.sin(((wv.pa && wv.pa.stride) || 0) / STRIDE * Math.PI)) * 1.6;
+        } else if (wv.walking && !wv.hasWalkFrames) py2 = -Math.abs(Math.sin(((wv.pa && wv.pa.stride) || 0) / (STRIDE * K()) * Math.PI)) * 1.6;
       } catch (e) {}
       place(pm, wv.px, wv.py, px2, py2);
     }
+  }
+  // ---- 怪物走路幀 -----------------------------------------------------------------------
+  // 核心只播待機／攻擊／受擊／死亡；素材裡其實有 d0～d7/walk_ 走路幀（八方向怪 35 隻＋其他 53 隻）。
+  // 怪在移動時由這裡每幀把圖換成「面向前進方向」的走路幀：一輪走路固定走 WALK_CYCLE 世界 px（幀數多的怪每幀走得少），
+  // 跟實際移動距離同步，不會滑步。核心 8fps 的計時器會把圖換回待機，但這裡在每次畫面更新前都會再蓋回來。
+  var WALK_CYCLE = 64, _mw = {};
+  // 這 10 隻怪的素材其實是完整八方向（d0～d7 都有待機／攻擊／走路），但核心名單沒列 → 加進去，
+  // 讓牠們跟其他八方向怪一樣轉向，走路幀也才能用（只換走路幀的話，根目錄圖和方向圖畫布大小不同會跳）
+  (function promote8() {
+    try {
+      if (typeof MOB_ANIM_8DIR === 'undefined' || typeof ANIM_MANIFEST === 'undefined') return;
+      ['人形殭屍', '冰人', '地獄束縛犬', '火焰弓箭手', '火焰戰士', '火蜥蜴', '變形怪首領', '食腐獸', '高等蜥蜴人', '魔熊'].forEach(function (n) {
+        var ent = ANIM_MANIFEST['assets/anim/' + ((typeof _animDir === 'function') ? _animDir(n) : n)]; if (!ent) return;
+        for (var d = 0; d < 8; d++) if (!ent['d' + d + '/idle_'] || !ent['d' + d + '/attack_']) return;
+        MOB_ANIM_8DIR.add(n);
+      });
+    } catch (e) {}
+  })();
+  function mobWalkInfo(name) {
+    if (_mw[name] !== undefined) return _mw[name];
+    var info = null;
+    try {
+      var folder = (typeof _animDir === 'function') ? _animDir(name) : name;
+      var ent = (typeof ANIM_MANIFEST !== 'undefined') && ANIM_MANIFEST['assets/anim/' + folder];
+      if (ent && ent['d5/walk_'] && is8Dir({ n: name })) {
+        info = { base: 'assets/anim/' + encodeURIComponent(folder) + '/', n: [], s: [], eight: is8Dir({ n: name }), pre: {} };
+        for (var d = 0; d < 8; d++) { info.n[d] = ent['d' + d + '/walk_'] || 0; info.s[d] = ent['d' + d + '/walk_s_'] || 0; }
+      }
+    } catch (e) {}
+    return (_mw[name] = info);
+  }
+  function preloadDir(info, d) {
+    if (info.pre[d]) return; info.pre[d] = 1;
+    for (var i = 0; i < info.n[d]; i++) { var im = new Image(); im.src = info.base + 'd' + d + '/walk_' + i + '.png'; if (info.s[d] > i) { var is = new Image(); is.src = info.base + 'd' + d + '/walk_s_' + i + '.png'; } }
+  }
+  function mobWalkFrame(card, m, p) {
+    var a = m._animAct; if (a && (a.k === 'attack' || a.k === 'skill' || a.k === 'hurt' || a.k === 'death' || a.k === 'spawn')) return false;
+    var info = mobWalkInfo(m.n); if (!info) return false;
+    var dir = hystDir(p, p.mdx || 0, p.mdy || 0), n = info.n[dir];
+    if (!n) return false;
+    preloadDir(info, dir);
+    var img = card.querySelector('.mob-img-wrap .mob-img-inner img:not(.mob-anim-shadow):not(.mob-anim-weapon):not(.mob-anim-weapon2)') || card.querySelector('.mob-img-wrap img:not(.mob-anim-shadow):not(.mob-anim-weapon):not(.mob-anim-weapon2)');
+    if (!img) return false;
+    var fr = Math.floor((p.stride || 0) / (WALK_CYCLE * K() / n)) % n;
+    var src = info.base + 'd' + dir + '/walk_' + fr + '.png';
+    if (img.getAttribute('src') !== src) img.setAttribute('src', src);
+    var sh = card.querySelector('.mob-anim-shadow');
+    if (sh) { if (info.s[dir]) { var ss = info.base + 'd' + dir + '/walk_s_' + (fr % info.s[dir]) + '.png'; sh.style.visibility = ''; if (sh.getAttribute('src') !== ss) sh.setAttribute('src', ss); } else sh.style.visibility = 'hidden'; }
+    var w1 = card.querySelector('.mob-anim-weapon'), w2 = card.querySelector('.mob-anim-weapon2');
+    if (w1) w1.style.visibility = 'hidden'; if (w2) w2.style.visibility = 'hidden';
+    if (!info.eight && card.style.getPropertyValue('--wv-fx') !== '1') card.style.setProperty('--wv-fx', '1');   // 方向圖本身就有朝向，不再左右翻
+    if (info.eight) m._face8 = dir;
+    return true;
   }
   function place(el, x, y, ox, oy) {
     var sx = (x + (ox || 0) - wv.cx).toFixed(1) + 'px', sy = (y + (oy || 0) - wv.cy).toFixed(1) + 'px', sz = String(10 + Math.round(y / 4));
@@ -1170,7 +1250,7 @@
       try {
         if (wv.on && m && !(m._animAct && (m._animAct.k === 'attack' || m._animAct.k === 'skill'))) {
           var p = wv.mobs.get(String(m.uid));
-          if (p && p.moving && (p.mdx || p.mdy) && !p.inReach) { var d = _vec2dir(p.mdx, p.mdy); m._face8 = d; return d; }
+          if (p && p.moving && (p.mdx || p.mdy) && !p.inReach) { var d = hystDir(p, p.mdx, p.mdy); m._face8 = d; return d; }
         }
       } catch (e) {}
       return orig.apply(this, arguments);
@@ -1194,7 +1274,7 @@
         var form = _playerBattleForm(); if (!form) return r;
         var a = _morphBattleCache[form.key]; if (!a || a === 'probing' || !a.walk || !a.walk.length) return r;
         wv.hasWalkFrames = true;
-        var f = Math.floor((((wv.pa && wv.pa.stride) || 0) / STRIDE)) % a.walk.length, I = _pmState.imgs; if (!I) return r;
+        var f = Math.floor((((wv.pa && wv.pa.stride) || 0) / (STRIDE * K()))) % a.walk.length, I = _pmState.imgs; if (!I) return r;
         if (I.bd.src !== a.walk[f].src) I.bd.src = a.walk[f].src;
         var ss = a.shadow && a.shadow.walk;
         if (ss && ss.length) { var sf = f % ss.length; I.sh.style.visibility = ''; if (I.sh.src !== ss[sf].src) I.sh.src = ss[sf].src; }
