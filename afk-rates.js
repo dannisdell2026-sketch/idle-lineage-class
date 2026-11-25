@@ -125,7 +125,7 @@
   function gmParam() { try { return new URLSearchParams(location.search).get('gm'); } catch (e) { return null; } }
 
   var CSS = [
-    '#afk-gm-btn{position:fixed;right:10px;bottom:calc(80px + var(--m-nav-h,0px));z-index:2147483000;padding:6px 12px;border-radius:6px;border:1px solid #d6b46a;background:#2a2218;color:#f5d27a;font-weight:700;font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,.6);}',
+    '#afk-rates-btn{position:fixed;right:10px;bottom:calc(80px + var(--m-nav-h,0px));z-index:2147483000;padding:6px 12px;border-radius:6px;border:1px solid #d6b46a;background:#2a2218;color:#f5d27a;font-weight:700;font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,.6);}',
     '#afk-gm{position:fixed;inset:0;z-index:2147483001;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:16px;}',
     '#afk-gm.open{display:flex;}',
     '#afk-gm .box{width:100%;max-width:380px;max-height:90vh;overflow:auto;background:linear-gradient(180deg,#1d1812,#0f0d0a);border:1px solid #8a6a35;border-radius:8px;padding:14px;color:#ecdfbf;font-size:14px;}',
@@ -154,12 +154,14 @@
     '#afk-gm .res div:hover{background:rgba(214,180,106,.15);}'
   ].join('\n');
 
-  function buildPanel() {
+  function buildPanel(noBtn) {
     if (panel) return;
     var st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
-    var btn = document.createElement('button'); btn.id = 'afk-gm-btn'; btn.type = 'button'; btn.textContent = 'GM 倍率';
-    btn.addEventListener('click', function () { refreshPanel(); panel.classList.add('open'); });
-    document.body.appendChild(btn);
+    if (!noBtn) {   // 只有 ?gm=<密鑰> 進來才多一顆浮動按鈕；一般 GM 從 GM 面板的「倍率／掉落／金幣」進來
+      var btn = document.createElement('button'); btn.id = 'afk-rates-btn'; btn.type = 'button'; btn.textContent = 'GM 倍率';
+      btn.addEventListener('click', function () { refreshPanel(); panel.classList.add('open'); });
+      document.body.appendChild(btn);
+    }
     panel = document.createElement('div'); panel.id = 'afk-gm';
     var rows = KEYS.map(function (k) {
       return '<div class="row"><label>' + k[1] + '</label><input type="range" min="0.1" max="20" step="0.1" data-k="' + k[0] + '">' +
@@ -301,4 +303,12 @@
     sha256hex(k).then(function (h) { if (h === GM_HASH) { buildPanel(); refreshPanel(); } }).catch(function () {});
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startGM); else startGM();
+
+  // GM 面板（afk-gm.js）加一顆「倍率／掉落／金幣」：GM 身分（帳號是 GM 或輸入過 GM 碼）才看得到 GM 面板，所以不用再帶密鑰網址
+  function openFromGM() { buildPanel(true); refreshPanel(); panel.classList.add('open'); }
+  window.AFK_RATES_OPEN = openFromGM;
+  (function reg(n) {
+    if (window.AFK_GM && AFK_GM.addSection) { AFK_GM.addSection('倍率／掉落／金幣', openFromGM); return; }
+    if (n < 40) setTimeout(function () { reg(n + 1); }, 250);
+  })(0);
 })();
